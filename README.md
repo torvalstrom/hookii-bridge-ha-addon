@@ -30,6 +30,36 @@ The add-on auto-publishes Home Assistant MQTT-Discovery configs, so as soon as i
 - 14 sensors per mower: battery percentage, blade RPM, voltage, charge current, four temperatures (battery / blade motor / left drive / right drive), WiFi signal, GPS satellite count, latitude, longitude, work status code, and a friendly "State" sensor ("mowing" / "returning" / "docked") derived from the mower's state machine.
 - The full raw `hookii/details/device/<serial>` STATUS payload is also republished, so any existing template sensors, automations, n8n flows or dashboards you wrote against the old community workaround keep working.
 
+## The Mower Map — get started in 3 steps
+
+The Mower Map is an optional companion add-on that renders a live SVG view of each mower's yard: the boundary polygon (when the cloud has streamed it), every cut path the mower has driven (thick green), every transit path it took without cutting (thin light green), the live trail in your chosen colour, and the mower itself with a heading arrow. Drop it into a Lovelace iframe card and you have a moving map of your yard updating every 10 seconds.
+
+### Quick start
+
+1. **Install the Hookii Bridge add-on first.** The Mower Map is a pure consumer of the bridge's MQTT output — it does not talk to Hookii's cloud directly. Without the bridge running, the map sits at "Waiting for data..." forever.
+
+2. **Install the Hookii Mower Map add-on** (same install path as the bridge, see below). Set the `mowers` option to a semicolon-separated list of `label:serial[:color]` entries — one per mower you want to see:
+
+   ```yaml
+   mowers: "garden:HKX1EB100JD25010115:#22c55e;pond:HKX2EB100JD24080170:#3b82f6"
+   ```
+
+   Re-use the same broker credentials you configured for the bridge. The label is the URL slug you'll reference in step 3.
+
+3. **Drop the map into a Lovelace iframe card:**
+
+   ```yaml
+   type: iframe
+   url: /hassio/ingress/hookii_mower_map/page/garden
+   aspect_ratio: 100%
+   ```
+
+   Replace `garden` with the label you set in step 2. For a side-by-side grid of every configured mower in a single card, point the URL at `/all` instead.
+
+That's all that's required to get a live view. The map will start at "Waiting for data..." and switch to a rendered yard as soon as the bridge republishes the first `STATUS` payload (usually within seconds). Boundary polygons appear when the cloud first streams `DEVICE_MAP_V2`, which can take minutes to hours after the mower comes online; live position and trail render immediately.
+
+Full configuration reference, env-var-driven setup for Container/k3s users, and troubleshooting are in [`hookii_mower_map/DOCS.md`](hookii_mower_map/DOCS.md).
+
 ## How it works under the hood
 
 In May 2026 Hookii migrated their cloud from a passive-subscribe MQTT bus to a JWT-gated heartbeat protocol on `iot.beta.hookii.com`. The old "just subscribe to `hookii/details/device/<serial>`" trick stopped working overnight, and the official Hookii app became the only client that could see the new protocol.

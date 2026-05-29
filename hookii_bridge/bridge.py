@@ -122,6 +122,29 @@ def normalise_status(payload: dict) -> None:
         for k, v in chassis.items():
             status.setdefault(k, v)
 
+    # 1b. taskInfo fan-out: same trick as chassisData. The new cloud nests
+    #     mowing-task telemetry (regionName, mowedArea, unMowedArea,
+    #     mowingCoverage, mowingEfficiency, mowingHeight, taskProgress,
+    #     executeTime, ...) inside data.STATUS.taskInfo, but every legacy
+    #     HA template sensor was written against the flat top-level shape
+    #     and reads e.g. value_json.data.STATUS.regionName. Fanning the
+    #     fields out as a non-clobbering copy fixes all those templates
+    #     without touching the dashboards.
+    task_info = status.get("taskInfo")
+    if isinstance(task_info, dict):
+        for k, v in task_info.items():
+            status.setdefault(k, v)
+
+    # 1c. Blade rotation direction (CW vs CCW) is encoded as a sign on
+    #     knifeDiscMotorSpeed in the raw cloud payload. HA users want a
+    #     "blade is spinning at N rpm" reading, not a vector quantity -
+    #     publish the absolute value so the sensor reads positive when
+    #     the blade is on. Rotation direction is still derivable from
+    #     the sign of knifeDiscMotorCurrent if anyone needs it.
+    rpm = status.get("knifeDiscMotorSpeed")
+    if isinstance(rpm, (int, float)):
+        status["knifeDiscMotorSpeed"] = abs(rpm)
+
     # 2. battery (Shape B) -> electricity (Shape A).
     if "battery" in status and "electricity" not in status:
         status["electricity"] = status["battery"]
@@ -628,7 +651,7 @@ def publish_discovery(local: mqtt.Client, cfg: Config, serial: str) -> None:
         ("temp_blade",   "Blade motor temp",   "knifeDiscMotorTemp",    "°C",  "temperature", "measurement", None,                "float"),
         ("temp_left",    "Left drive temp",    "leftDriveMotorTemp",    "°C",  "temperature", "measurement", None,                "float"),
         ("temp_right",   "Right drive temp",   "rightDriveMotorTemp",   "°C",  "temperature", "measurement", None,                "float"),
-        ("wifi_signal",  "WiFi signal",        "wifiSignal",            "dBm", "signal_strength", "measurement", None,            "int"),
+        ("wifi_signal",  "WiFi signal",        "wifiSignal",            "%",   None,          "measurement", "mdi:wifi",          "int"),
         ("satellite",    "GPS satellites",     "satellite",             None,  None,          "measurement", "mdi:satellite-variant", "int"),
         ("latitude",     "Latitude",           "latitude",              "°",   None,          None,          "mdi:latitude",      "float"),
         ("longitude",    "Longitude",          "longitude",             "°",   None,          None,          "mdi:longitude",     "float"),

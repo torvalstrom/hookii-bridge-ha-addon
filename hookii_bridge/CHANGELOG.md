@@ -1,9 +1,21 @@
 # Changelog
 
-## Unreleased
+## 1.1.7 (2026-05-29)
 
-- Docs: README gains a full "Install path B: Home Assistant Container / Core / k3s" walkthrough so users on Docker-based HA installs (no Supervisor) can install + update the bridge using docker-compose / `docker run` against the repo's root `Dockerfile`. Includes env-var reference table and update commands. The existing Add-on Store path is now explicitly labelled "Install path A: Home Assistant OS / Supervised".
-- Docs: Install path B compose example revised based on field feedback from the first user who set it up — adds the missing `network_mode: host` (required so the bridge can reach the host's Mosquitto on `127.0.0.1:1883` without Docker bridge-network DNS in the way), uses the `- KEY=VALUE` list form for `environment` instead of the `KEY: "value"` map form (more robust against YAML parsers that mis-handle colon-containing values like the `HOOKII_ACCOUNTS` triplet), and pulls the LABEL↔`HOOKII_SERIALS_<LABEL>` dependency out into an explicit warning callout so the link between the two env vars is impossible to miss.
+**Systematic sensor audit fixes - three classes of bug discovered by walking every HA dashboard sensor against a captured raw STATUS payload from a live mowing mower.**
+
+1. **`taskInfo` fan-out in `normalise_status`.** The new cloud payload nests mowing-task telemetry inside `data.STATUS.taskInfo`: `regionName`, `mowedArea`, `unMowedArea`, `mowingCoverage`, `mowingEfficiency`, `mowingHeight`, `taskProgress`, `executeTime`, `startTime`, etc. The bridge's existing fan-out logic only handled `chassisData`, so every legacy HA template sensor that reads e.g. `value_json.data.STATUS.regionName` was resolving to undefined and showing "Unknown" / "0" / blank. Fan-out copies these to top-level as a non-clobbering setdefault, exactly the same trick we already use for `chassisData`. Every legacy template sensor fixes itself without dashboard edits.
+
+2. **WiFi signal unit corrected from `dBm` to `%` and the `signal_strength` device class dropped.** The cloud sends `wifiSignal` as a 0-100 signal quality value, not an RSSI dBm reading - HA dashboards were showing things like `25 dBm` (which is wrong both in unit AND would be physically implausible). The `signal_strength` device class in HA expects dBm and was triggering misleading "weak signal" classifications. Now reads as a clean `14 %` / `25 %` quality figure.
+
+3. **Blade RPM absolute value.** The cloud encodes blade rotation direction (CW vs CCW) as a sign on `knifeDiscMotorSpeed`. HA users want a "blade spinning at N rpm" reading, not a vector - the negative was making dashboards display `-1841 rpm` when the blade was actively cutting. Bridge now publishes `abs(rpm)` so HA shows positive RPM whenever the blade is spinning. Rotation direction remains derivable from the sign of `knifeDiscMotorCurrent` if anyone needs it.
+
+No HA dashboard / template-sensor edits are needed for any of these fixes - they all surface immediately after upgrading the bridge image. The legacy `electricity` / `chargeCurrent` / `voltage` / motor-temp sensors continue to read correctly as before.
+
+## Docs (also in this release)
+
+- README gains a full "Install path B: Home Assistant Container / Core / k3s" walkthrough so users on Docker-based HA installs (no Supervisor) can install + update the bridge using docker-compose / `docker run` against the repo's root `Dockerfile`. Includes env-var reference table and update commands. The existing Add-on Store path is now explicitly labelled "Install path A: Home Assistant OS / Supervised".
+- Install path B compose example revised based on field feedback from the first user who set it up — adds the missing `network_mode: host` (required so the bridge can reach the host's Mosquitto on `127.0.0.1:1883` without Docker bridge-network DNS in the way), uses the `- KEY=VALUE` list form for `environment` instead of the `KEY: "value"` map form (more robust against YAML parsers that mis-handle colon-containing values like the `HOOKII_ACCOUNTS` triplet), and pulls the LABEL↔`HOOKII_SERIALS_<LABEL>` dependency out into an explicit warning callout so the link between the two env vars is impossible to miss.
 
 ## 1.1.6 (2026-05-29)
 

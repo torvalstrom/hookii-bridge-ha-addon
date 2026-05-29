@@ -24,7 +24,7 @@ You need to have these set up in Home Assistant already:
 1. **Your mower is on Hookii BETA firmware `1.6.8.4-beta` or newer** (see banner above). Verify in the Hookii mobile app under each mower → Settings → Firmware. If you don't see a `…-beta` suffix on the version, you're still on stable and the add-on cannot work.
 2. **Mosquitto broker add-on** (Settings → Add-ons → Add-on Store → "Mosquitto broker" → Install + Start). The community version published by Home Assistant is fine.
 3. **MQTT integration** (Settings → Devices & Services → Add Integration → MQTT). Point it at your Mosquitto broker.
-4. A **dedicated MQTT user** for the bridge. In Home Assistant: Settings → People → Users → Add user → give it a username like `hookii` and a strong password. Then in the Mosquitto broker add-on → Configuration → make sure users are auto-loaded from HA (default).
+4. A **dedicated MQTT user** for the bridge. In Home Assistant: Settings → Users → Add user → give it a username like `hookii` and a strong password. You don't need to change anything in the Mosquitto broker add-on - by default it accepts any Home Assistant user's username + password for MQTT login, so the user you just created is immediately usable. (You'll paste that username and password into the Hookii Bridge add-on's `local_mqtt_user` and `local_mqtt_pass` fields below.)
 5. **Your Hookii account credentials** (the email + password you log in to the Hookii mobile app with). Read the "How to enter your password" section below before you paste it.
 6. **Your mower's serial number(s).** You can read these in the Hookii app under each mower → Device info, or off the sticker on the underside of the mower. They look like `HKX1EB100JD25010115`.
 

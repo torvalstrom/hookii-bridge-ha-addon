@@ -240,7 +240,7 @@ class Config:
     local_user: str
     local_pass: str
     local_topic_fmt: str
-    heartbeat_sec: int
+    heartbeat_sec: float
     enable_discovery: bool = True
     discovery_prefix: str = "homeassistant"
     cmd_topic_fmt: str = "hookii/cmd/{serial}/{action}"
@@ -286,7 +286,7 @@ def parse_config() -> Config:
         local_user=os.environ.get("LOCAL_MQTT_USER", ""),
         local_pass=os.environ.get("LOCAL_MQTT_PASS", ""),
         local_topic_fmt=os.environ.get("LOCAL_TOPIC_FMT", "hookii/details/device/{serial}"),
-        heartbeat_sec=int(os.environ.get("HEARTBEAT_SEC", "15")),
+        heartbeat_sec=float(os.environ.get("HEARTBEAT_SEC", "1.5")),
         enable_discovery=os.environ.get("ENABLE_DISCOVERY", "1") not in ("0", "false", "False", ""),
         discovery_prefix=os.environ.get("DISCOVERY_PREFIX", "homeassistant"),
         cmd_topic_fmt=os.environ.get("CMD_TOPIC_FMT", "hookii/cmd/{serial}/{action}"),
@@ -790,11 +790,16 @@ class AccountClient:
                 except Exception:
                     LOG.exception("[%s] heartbeat publish failed for %s", self.acct.label, sn)
             self.push_counter += 1
-            # Sleep in small chunks so stop signal is honoured promptly.
-            for _ in range(self.cfg.heartbeat_sec):
+            # The mobile app heartbeats at exactly 1.5s (confirmed via pcap).
+            # We default to that. Sub-second intervals stay responsive to
+            # SIGTERM by polling _stop at 0.5s granularity rather than the
+            # full heartbeat interval - matters when interval >= 1s.
+            deadline = time.time() + self.cfg.heartbeat_sec
+            while time.time() < deadline:
                 if self._stop.is_set():
                     return
-                time.sleep(1)
+                remaining = deadline - time.time()
+                time.sleep(min(0.5, max(0.01, remaining)))
 
 
 # ---------------------------------------------------------------------------

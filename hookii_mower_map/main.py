@@ -55,6 +55,11 @@ TRAIL_MAX = int(os.environ.get("TRAIL_MAX", "2000"))
 PERSIST_DIR = Path(os.environ.get("PERSIST_DIR", "/data"))
 PERSIST_DIR.mkdir(parents=True, exist_ok=True)
 
+# Default cutting width in cm for cut-path stroke rendering. The Neomow X Pro
+# is ~23cm; the bridge may republish a more precise value via REGION_TASK
+# payloads (mowingWidth field) which is then picked up at render time.
+MOWING_WIDTH_DEFAULT_CM = float(os.environ.get("MOWING_WIDTH_CM", "25"))
+
 
 def parse_mowers(spec: str) -> dict[str, dict]:
     """Parse the MOWERS env var into a per-label state dict.
@@ -95,6 +100,7 @@ def parse_mowers(spec: str) -> dict[str, dict]:
             "device_map": None,
             "path_list": None,
             "path_index": None,
+            "region_task": None,  # latest REGION_TASK (mowingWidth, etc.)
             "device_map_at": None,
             "path_list_at": None,
             "path_index_at": None,
@@ -343,6 +349,14 @@ def on_message(client: mqtt.Client, userdata, msg):
         if not (PERSIST_DIR / f"{label}_ALL_PATH_INDEX_V2.json").exists():
             persist_capture(label, "ALL_PATH_INDEX_V2", payload_raw)
 
+    elif msg_type == "REGION_TASK":
+        # Used by render_svg() to pick up the mower's actual cutting width
+        # (`mowingWidth`, in cm) so the cut-path stroke renders as a swept
+        # area that matches the physical reality. Not persisted: this is
+        # derived state and we'd rather a clean re-derive on restart than
+        # a stale cached value.
+        s["region_task"] = payload.get("data", {}).get("REGION_TASK", {})
+
 
 def mqtt_listener() -> None:
     """Long-running thread: connect to local broker, subscribe per mower."""
@@ -473,14 +487,42 @@ def render_svg(label: str) -> str:
     ]
     px = max(span_x, span_y) / 800  # 1 screen px in data units
 
+    # Boundary polygon is the FULL mapped yard territory - rendered as a
+    # translucent light-green fill so the cut-coverage strokes layer on top
+    # of it the same way the Hookii mobile app shows it ("light green = yet
+    # to mow, darker green = mowed").
     if boundary_points:
         pts = " ".join(
             f"{to_svg(x, y)[0]:.1f},{to_svg(x, y)[1]:.1f}" for x, y in boundary_points
         )
         svg.append(
-            f'<polygon points="{pts}" fill="#22c55e22" stroke="#22c55e" '
-            f'stroke-width="2" stroke-dasharray="4 2"/>'
+            f'<polygon points="{pts}" fill="#86efac33" stroke="#86efac55" '
+            f'stroke-width="{px*1:.1f}" stroke-linejoin="round"/>'
         )
+
+    # Path coverage. Cut segments are rendered with a stroke-width equal to
+    # the mower's actual cutting width (`mowing_width_cm`, see below) so that
+    # adjacent parallel rows physically overlap and visually merge into one
+    # continuous filled coverage polygon - the same look the Hookii mobile
+    # app produces, instead of the "stripes with holes" you get when the
+    # stroke is sized in pixel-equivalents rather than data units.
+    #
+    # We pull the cutting width out of the latest STATUS / REGION_TASK
+    # payload when present, with a Neomow X Pro default of 23 cm (per
+    # the protocol reference).
+    mowing_width_cm = MOWING_WIDTH_DEFAULT_CM
+    try:
+        # The bridge fans out REGION_TASK to status if available; fall back
+        # to taskInfo (newer cloud shape) or status root.
+        rt = s.get("region_task") or {}
+        mw = (
+            rt.get("mowingWidth")
+            if isinstance(rt, dict) else None
+        )
+        if isinstance(mw, (int, float)) and mw > 0:
+            mowing_width_cm = float(mw)
+    except Exception:
+        pass
 
     path_points = extract_path_points(s)
     if path_points:
@@ -498,6 +540,11 @@ def render_svg(label: str) -> str:
         if cur:
             (cut_segments if cur_info == 1 else transit_segments).append(cur)
 
+        # Cut paths: stroke-width in DATA units (cm), large enough that the
+        # 23-30cm row spacing on adjacent parallel rows guarantees overlap.
+        # We multiply by a small fudge factor so neighbouring rows touch
+        # cleanly even when the path was sampled sparsely.
+        cut_stroke = max(mowing_width_cm * 1.4, px * 2)
         for seg in cut_segments:
             if len(seg) < 2:
                 continue
@@ -506,8 +553,12 @@ def render_svg(label: str) -> str:
             )
             svg.append(
                 f'<polyline points="{pts}" fill="none" stroke="#22c55e" '
-                f'stroke-width="{px*3:.1f}" stroke-linecap="round" opacity="0.85"/>'
+                f'stroke-width="{cut_stroke:.0f}" stroke-linecap="round" '
+                f'stroke-linejoin="round" opacity="0.85"/>'
             )
+        # Transit paths stay thin - they're not coverage, they're "the mower
+        # was moving between zones without cutting" and should not visually
+        # claim coverage area.
         for seg in transit_segments:
             if len(seg) < 2:
                 continue
@@ -611,41 +662,86 @@ def get_state(label: str):
     }
 
 
+_PAGE_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>__LABEL__</title>
+<style>
+  html, body { background:#0f172a; margin:0; padding:0; height:100%; overflow:hidden; }
+  #wrap { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+  #wrap svg { width:100%; height:100%; display:block; }
+</style></head><body>
+<div id="wrap"></div>
+<script>
+  // JS-driven refresh: fetch the SVG every 10s and swap into the existing
+  // container's innerHTML. No page-reload flash, no white frame in between.
+  // We never throw away the previous frame until the new one has arrived,
+  // and we cache-bust with a timestamp so any intermediate caches don't
+  // serve stale frames.
+  const wrap = document.getElementById('wrap');
+  async function tick() {
+    try {
+      const r = await fetch('/svg/__LABEL__?t=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) {
+        wrap.innerHTML = await r.text();
+      }
+    } catch (e) { /* swallow: try again next tick */ }
+  }
+  tick();
+  setInterval(tick, 10000);
+</script>
+</body></html>"""
+
+
+_ALL_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Hookii Mower Map</title>
+<style>
+  body { background:#0f172a; color:#f1f5f9; font-family:sans-serif; margin:0; padding:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:12px; }
+  .mower { background:#1e293b; border-radius:8px; padding:8px; }
+  h2 { margin:4px 8px; font-size:14px; }
+  .map { width:100%; aspect-ratio: 1.4 / 1; display:block; border-radius:4px; overflow:hidden; }
+  .map svg { width:100%; height:100%; display:block; }
+</style></head><body>
+<div class="grid">__BLOCKS__</div>
+<script>
+  // Same no-blink swap pattern as /page, applied per-mower in the grid.
+  const labels = __LABELS_JSON__;
+  async function refreshOne(label) {
+    try {
+      const r = await fetch('/svg/' + label + '?t=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) {
+        const el = document.querySelector('div[data-label="' + label + '"] .map');
+        if (el) el.innerHTML = await r.text();
+      }
+    } catch (e) { /* try again */ }
+  }
+  function tick() { labels.forEach(refreshOne); }
+  tick();
+  setInterval(tick, 10000);
+</script>
+</body></html>"""
+
+
 @app.get("/page/{label}", response_class=HTMLResponse)
 def get_page(label: str):
     if label not in state:
         raise HTTPException(status_code=404, detail=f"unknown mower {label!r}")
-    return f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>{label}</title>
-<meta http-equiv="refresh" content="10">
-<style>
-  html, body {{ background:#0f172a; margin:0; padding:0; height:100%; overflow:hidden; }}
-  img {{ width:100%; height:100%; object-fit:contain; display:block; }}
-</style></head><body>
-<img src="/svg/{label}?t={int(time.time())}" alt="{label}"/>
-</body></html>"""
+    return _PAGE_HTML.replace("__LABEL__", label)
 
 
 @app.get("/all", response_class=HTMLResponse)
 def get_all():
-    blocks = []
-    for label in state:
-        blocks.append(
-            f'<div class="mower"><h2>{label.upper()}</h2>'
-            f'<img src="/svg/{label}?t={int(time.time())}"/></div>'
-        )
-    return f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>Hookii Mower Map</title>
-<meta http-equiv="refresh" content="10">
-<style>
-  body {{ background:#0f172a; color:#f1f5f9; font-family:sans-serif; margin:0; padding:12px; }}
-  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:12px; }}
-  .mower {{ background:#1e293b; border-radius:8px; padding:8px; }}
-  h2 {{ margin:4px 8px; font-size:14px; }}
-  img {{ width:100%; height:auto; display:block; border-radius:4px; }}
-</style></head><body>
-<div class="grid">{"".join(blocks)}</div>
-</body></html>"""
+    blocks = "".join(
+        f'<div class="mower" data-label="{label}">'
+        f'<h2>{label.upper()}</h2>'
+        f'<div class="map"></div>'
+        f'</div>'
+        for label in state
+    )
+    return (
+        _ALL_HTML
+        .replace("__BLOCKS__", blocks)
+        .replace("__LABELS_JSON__", json.dumps(list(state.keys())))
+    )
 
 
 # ---------------------------------------------------------------------------

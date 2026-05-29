@@ -48,7 +48,7 @@ This add-on:
    ```
 
 4. Click **Add → Close**
-5. Reload the Add-on store. **Hookii Bridge** appears under "Tor Valstrom Add-ons".
+5. Reload the Add-on store. **Hookii Bridge** appears under "Neomow X Home Assistant Add-on".
 6. Click it → **Install**, then follow the [Hookii Bridge setup guide](hookii_bridge/DOCS.md) — it walks through the Hookii account credentials, your mower serial number(s) and the Mosquitto broker settings the add-on needs.
 
 ## Disclaimer

@@ -1,5 +1,8 @@
 # Conscient Systems Home Assistant Add-ons
 
+> ⚠️ **Requires Hookii BETA firmware `1.6.8.4-beta` or newer on every mower this bridge talks to.**
+> The new cloud protocol this add-on speaks (`iot.beta.hookii.com`) is only live on the Hookii BETA channel. **Mowers on the stable firmware channel will not work.** Switch each mower to the Beta channel in the Hookii mobile app before installing.
+
 This repository contains a single Home Assistant add-on:
 
 - **Hookii Bridge** — reverse-engineered cloud bridge for **Hookii Neomow** robot mowers so Home Assistant can read live STATUS (battery, position, knife RPM, motor temps, work mode, …) again after the 2026 cloud protocol change.

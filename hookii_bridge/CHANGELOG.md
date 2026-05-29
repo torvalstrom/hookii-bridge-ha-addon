@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2 (2026-05-29)
+
+- Docs: prominent warning across the repo README, add-on README, DOCS.md, config description and troubleshooting section that this add-on **requires Hookii BETA firmware `1.6.8.4-beta` or newer**. Mowers on stable firmware do not push to `iot.beta.hookii.com` and the bridge has no way to make the cloud talk to them. Added explicit prerequisite step and a troubleshooting entry for the "REST login OK but no STATUS arriving" symptom that stable-firmware users will hit.
+
 ## 1.0.1 (2026-05-29)
 
 - Docs-only: scrubbed Conscient Systems / k3s-specific references from `bridge.py` docstrings so the file reads cleanly as a standalone Python script for HA OS users (or for anyone else who wants to run it under systemd / Docker Compose / etc.). No behaviour change.

@@ -1,16 +1,25 @@
 # Hookii Bridge
 
+> ⚠️ **Requires Hookii BETA firmware `1.6.8.4-beta` or newer on every mower this add-on talks to.**
+>
+> The new cloud protocol this add-on speaks lives on `iot.beta.hookii.com`, which is **only live on the Hookii BETA firmware channel**. Mowers on the stable channel won't push STATUS through this bridge at all - the REST login will succeed but no STATUS topics will ever arrive.
+>
+> **Before you install:** open the Hookii mobile app → your mower → settings → firmware → switch to the Beta channel, and let it update to `1.6.8.4-beta` or newer. Do this for every mower you want bridged. Joining the Beta channel is a Hookii setting, not a Home Assistant one; this add-on cannot do it for you.
+>
+> If you're not comfortable running BETA firmware on your mower, this add-on is **not** for you yet - wait until Hookii promotes the new protocol to the stable channel.
+
 This add-on logs in to Hookii's cloud with your account, keeps the new (May 2026) JWT-gated heartbeat protocol alive, and republishes your mower's STATUS to your **own Mosquitto broker** on the legacy `hookii/details/device/<serial>` topic that the original community integrations used. Any existing Home Assistant template sensors, automations or dashboards that read from that topic keep working unchanged.
 
 ## What you need before installing
 
 You need to have these set up in Home Assistant already:
 
-1. **Mosquitto broker add-on** (Settings → Add-ons → Add-on Store → "Mosquitto broker" → Install + Start). The community version published by Home Assistant is fine.
-2. **MQTT integration** (Settings → Devices & Services → Add Integration → MQTT). Point it at your Mosquitto broker.
-3. A **dedicated MQTT user** for the bridge. In Home Assistant: Settings → People → Users → Add user → give it a username like `hookii` and a strong password. Then in the Mosquitto broker add-on → Configuration → make sure users are auto-loaded from HA (default).
-4. **Your Hookii account credentials** (the email + password you log in to the Hookii mobile app with). Read the "How to enter your password" section below before you paste it.
-5. **Your mower's serial number(s).** You can read these in the Hookii app under each mower → Device info, or off the sticker on the underside of the mower. They look like `HKX1EB100JD25010115`.
+1. **Your mower is on Hookii BETA firmware `1.6.8.4-beta` or newer** (see banner above). Verify in the Hookii mobile app under each mower → Settings → Firmware. If you don't see a `…-beta` suffix on the version, you're still on stable and the add-on cannot work.
+2. **Mosquitto broker add-on** (Settings → Add-ons → Add-on Store → "Mosquitto broker" → Install + Start). The community version published by Home Assistant is fine.
+3. **MQTT integration** (Settings → Devices & Services → Add Integration → MQTT). Point it at your Mosquitto broker.
+4. A **dedicated MQTT user** for the bridge. In Home Assistant: Settings → People → Users → Add user → give it a username like `hookii` and a strong password. Then in the Mosquitto broker add-on → Configuration → make sure users are auto-loaded from HA (default).
+5. **Your Hookii account credentials** (the email + password you log in to the Hookii mobile app with). Read the "How to enter your password" section below before you paste it.
+6. **Your mower's serial number(s).** You can read these in the Hookii app under each mower → Device info, or off the sticker on the underside of the mower. They look like `HKX1EB100JD25010115`.
 
 ## How to enter your password
 
@@ -230,6 +239,7 @@ If you want more (chassis attitude, lift sensors, individual drive motor stats, 
 
 ## Troubleshooting
 
+- **REST login OK, MQTT connected, but no `RX hk/server/mower/push/...` lines ever appear.** The single most common cause: at least one of your mowers is still on stable firmware. The add-on connects to `iot.beta.hookii.com`, which is only populated by mowers on Hookii BETA firmware `1.6.8.4-beta` or newer. Open the Hookii app, confirm each mower's firmware has the `…-beta` suffix, and let pending updates install before retrying.
 - **No sensors update at all.** Double-check the bridge logs show `cloud-mqtt connected` AND a `RX hk/server/mower/push/...` line within ~30 s. If the second is missing, the heartbeat isn't being accepted — verify your account works in the official Hookii app first.
 - **REST login OK but `mowing_zero` / serial mismatch.** Open the bridge log, look for `learned model=… for serial=…`. If your serial never shows up there, you typed the wrong one in `mower_serials`. Check it against the Hookii app.
 - **Sensor values are stuck.** Try setting `log_level: DEBUG`, restart the add-on, watch the logs and reload your YAML.

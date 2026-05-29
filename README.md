@@ -1,4 +1,4 @@
-# Tor Valstrom Home Assistant Add-ons
+# Neomow X Home Assistant Add-on
 
 > ⚠️ **Requires Hookii BETA firmware `1.6.8.4-beta` or newer on every mower this bridge talks to.**
 > The new cloud protocol this add-on speaks (`iot.beta.hookii.com`) is only live on the Hookii BETA channel. **Mowers on the stable firmware channel will not work.** Switch each mower to the Beta channel in the Hookii mobile app before installing.

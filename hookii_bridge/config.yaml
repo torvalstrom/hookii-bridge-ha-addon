@@ -1,0 +1,39 @@
+name: Hookii Bridge
+version: "1.0.0"
+slug: hookii_bridge
+description: >-
+  Reverse-engineered cloud bridge for Hookii Neomow robot mowers (May 2026
+  protocol). Logs in to Hookii's REST API, keeps a JWT-gated MQTT heartbeat
+  alive, normalises the payload and republishes to your local MQTT broker on
+  the legacy topic format so existing HA sensors keep working.
+url: https://github.com/conscientsystems/hookii-bridge-ha-addon
+arch:
+  - amd64
+  - aarch64
+  - armv7
+init: false
+boot: auto
+startup: services
+host_network: false
+hassio_api: false
+homeassistant_api: false
+options:
+  hookii_email: ""
+  hookii_password: ""
+  mower_serials: ""
+  local_mqtt_host: "core-mosquitto"
+  local_mqtt_port: 1883
+  local_mqtt_user: ""
+  local_mqtt_pass: ""
+  heartbeat_seconds: 15
+  log_level: "INFO"
+schema:
+  hookii_email: str
+  hookii_password: password
+  mower_serials: str
+  local_mqtt_host: str
+  local_mqtt_port: port
+  local_mqtt_user: str
+  local_mqtt_pass: password
+  heartbeat_seconds: int(5,120)
+  log_level: list(DEBUG|INFO|WARNING|ERROR)

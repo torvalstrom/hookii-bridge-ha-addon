@@ -1,0 +1,9 @@
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.21
+  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.21
+  armv7: ghcr.io/home-assistant/armv7-base-python:3.12-alpine3.21
+labels:
+  org.opencontainers.image.title: "Hookii Bridge"
+  org.opencontainers.image.description: "Cloud bridge for Hookii Neomow robot mowers"
+  org.opencontainers.image.source: "https://github.com/conscientsystems/hookii-bridge-ha-addon"
+  org.opencontainers.image.licenses: "Apache-2.0"

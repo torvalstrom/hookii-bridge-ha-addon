@@ -100,6 +100,25 @@ The two options produce the same login result; pick whichever you're more comfor
 
    If you see `REST login failed` with `code: 5, msg: 该用户未注册`, your email is not registered on `iot.beta.hookii.com`. Try the credentials in the Hookii mobile app first. If you see `code: 2, msg: hookii-agent参数错误`, that's a Hookii server change and we'll need to update the add-on.
 
+## Updating to a newer version
+
+If you already have Hookii Bridge installed, new releases show up automatically in the Home Assistant Add-on Store. The full flow:
+
+1. Go to **Settings → Add-ons**. When an update is available, a small orange dot appears next to **Hookii Bridge**.
+2. Click **Hookii Bridge** to open the add-on page.
+3. At the top there's a banner reading *"There is an update available for this add-on"* with the new version number, and an **Update** button. Click it.
+4. The Supervisor downloads + rebuilds the new image. Takes 1-2 minutes.
+5. The add-on auto-restarts when the update is done. You're on the new version.
+
+**If you don't see the update banner** but you know there's a newer version on GitHub:
+
+- In the Add-on Store, click the **⋮** menu (top right) → **Reload** (sometimes called **Check for updates**). HA refreshes the marketplace metadata for every installed repository.
+- Reload the add-on page; the update banner should now appear.
+
+**To check which version you're on right now**: open the add-on page and scroll down - the currently-installed version is shown near the bottom.
+
+**To read what changed between versions**: the [CHANGELOG](CHANGELOG.md) lists every release with its highlights, breaking changes and rationale.
+
 ## Sending commands
 
 The add-on subscribes to `hookii/cmd/<serial>/<action>` and translates each publish into a REST call against `iot.beta.hookii.com`. The five buttons published via Discovery already wire up the common actions; if you'd rather call them from automations or scripts, the topics are:

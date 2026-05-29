@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.9 (2026-05-29)
+
+**Extend the `deviceRegionTask` backward-compat alias to include `uncutArea`.** Discovered after v1.1.8 deploy that pre-May-2026 ETA-style templates also read `deviceRegionTask.uncutArea` (the old name for what the new cloud calls `unMowedArea`). v1.1.8 aliased `cutArea`/`mowedArea` and `mowingCoverageRate`/`mowingCoverage` but missed the un-cut counterpart; HA was logging `UndefinedError: 'dict object' has no attribute 'uncutArea'` for any template that extrapolated remaining time from the ratio. Now reconstructed alongside the other two aliases.
+
 ## 1.1.8 (2026-05-29)
 
 **`deviceRegionTask` backward-compat alias in `normalise_status`.** Pre-May-2026 HA template sensors were written against an earlier Hookii cloud schema that nested mowing-task telemetry under `data.STATUS.deviceRegionTask` with slightly different field names (`cutArea` instead of `mowedArea`, `mowingCoverageRate` instead of `mowingCoverage`). The new cloud dropped that nested shape entirely in favour of `data.STATUS.taskInfo` with the renamed fields. Templates reading the old path were resolving to undefined and dashboards were showing "Unknown" / "0" for Cut / Region / Coverage / Height / Progress / Efficiency even after v1.1.7's `taskInfo` fan-out (because users' templates were not reading the fanned-out top-level fields - they were reading `deviceRegionTask.*`).

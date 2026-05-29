@@ -150,6 +150,8 @@ def normalise_status(payload: dict) -> None:
             drt = dict(task_info)
             if "mowedArea" in drt:
                 drt.setdefault("cutArea", drt["mowedArea"])
+            if "unMowedArea" in drt:
+                drt.setdefault("uncutArea", drt["unMowedArea"])
             if "mowingCoverage" in drt:
                 drt.setdefault("mowingCoverageRate", drt["mowingCoverage"])
             status["deviceRegionTask"] = drt

@@ -134,14 +134,23 @@ def normalise_status(payload: dict) -> None:
             status["workStatus"] = ws
 
     # 4. chargeDischargeCurrent (Shape B) -> chargeCurrent/dischargeCurrent.
-    #    Sign convention from the legacy templates: c > 0 == charging,
-    #    c < 0 == mowing (see work_status template). chargeDischargeCurrent
-    #    appears to follow the same convention so we copy through unchanged.
+    #    Sign convention - same in both shapes (verified live across
+    #    Tor's 4 mowers 2026-05-29 with a clear mix of states):
+    #        positive value = current flowing INTO battery = charging
+    #        negative value = current flowing OUT of battery = discharging/mowing
+    #    Examples observed:
+    #      Jannick docked at 95% trickle-charging: chargeDischargeCurrent=+2.5
+    #      Greenhouse mowing actively (blade -1794 rpm): chargeDischargeCurrent=-2.2
+    #      Pond docked at 100% (full): chargeDischargeCurrent=-0.1
+    #    An earlier version of this function flipped the sign based on a
+    #    one-off observation that turned out to be misread - the flip
+    #    inverted the WHOLE table and made every mower's UI lie.
     if "chargeDischargeCurrent" in status:
+        cdc = status["chargeDischargeCurrent"]
         if "chargeCurrent" not in status:
-            status["chargeCurrent"] = status["chargeDischargeCurrent"]
+            status["chargeCurrent"] = cdc
         if "dischargeCurrent" not in status:
-            status["dischargeCurrent"] = status["chargeDischargeCurrent"]
+            status["dischargeCurrent"] = cdc
 
     # 5. fourGSignal (Shape B) -> networkSignal (Shape A) as a best-effort
     #    proxy. Note: 4G and WiFi can both be present, so we don't touch

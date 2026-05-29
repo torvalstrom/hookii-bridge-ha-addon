@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.6 (2026-05-29)
+
+**Revert the v1.1.x sign-flip on `chargeDischargeCurrent`.** Sampling all 4 mowers in mixed states (docked-trickle-charging, mowing-actively, fully-charged-standby) showed both Shape A `chargeCurrent` and Shape B `chargeDischargeCurrent` use the SAME sign convention:
+
+- **positive value** = current flowing INTO the battery (charging)
+- **negative value** = current flowing OUT (mowing / discharging)
+
+An earlier release introduced a sign-flip based on a one-off observation that turned out to be misread. The flip inverted the WHOLE table - every mower's `chargeCurrent` sensor read the opposite of reality. Now passed through unchanged. The `work_status` template's `c > 0 == charging, c < 0 == mowing` logic reads correctly again.
+
+(No HA-side dashboard change needed - same `chargeCurrent` sensor name, just correctly signed values.)
+
 ## 1.1.5 (2026-05-29)
 
 **Detect `code=10` "token 失效" + re-login retry.** Resolves the "I press Dock or Start and nothing happens" symptom that 1.1.3's polling alone didn't fully fix.

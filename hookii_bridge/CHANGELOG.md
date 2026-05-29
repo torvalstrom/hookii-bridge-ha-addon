@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.4 (2026-05-29)
+
+**Heartbeat `push` field is now a per-session constant (was a monotonic counter).** Likely root cause of the "mobile app logs me out every ~hour" symptom that 1.1.2 alone didn't fully resolve.
+
+PCAP analysis of the Android app showed the `push` field stays at exactly the same value across every heartbeat in a session - 23 across 18 consecutive heartbeats in the Greenhouse-recharge capture, never increments. The protocol-reference doc that called it a "monotonic counter" turns out to be wrong: it's a session-instance identifier the server probably uses together with `loginId` as a logical session key.
+
+When the bridge sent an ever-incrementing counter, the server saw heartbeats with the same `loginId` (= user) but different `push` (= "client instance") as competing sessions - applied its single-session-per-user policy - and evicted whichever it considered "older" between bridge and phone app. With both now using the same constant push value the server should treat them as one consistent session.
+
+`push` is now initialised to 23 on AccountClient construction (per-session) and never increments. New connections (e.g. after a SIGTERM-restart) get a fresh AccountClient with the same constant value.
+
 ## 1.1.3 (2026-05-29)
 
 **Commands now poll the server until completion (matches mobile app).** Fixes the "I pressed Dock and nothing happened" symptom on a contact-fault / stuck mower.

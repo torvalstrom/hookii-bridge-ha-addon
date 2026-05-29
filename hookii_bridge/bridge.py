@@ -651,7 +651,11 @@ class AccountClient:
         self.acct = acct
         self.local = local_client
         self.client_id = f"Android_{acct.email}_{int(time.time() * 1000)}"
-        self.push_counter = 1
+        # Session-scoped "push" value the heartbeat includes. PCAP-observed
+        # behaviour is that the app uses the SAME value for every heartbeat
+        # in a session (not a counter). Default 23 matches the Android
+        # client we captured 2026-05-29.
+        self.push_counter = 23
         self._stop = threading.Event()
         self._client: mqtt.Client | None = None
         self._hb_thread: threading.Thread | None = None
@@ -833,13 +837,27 @@ class AccountClient:
                 payload = json.dumps({
                     "ts": int(time.time() * 1000),
                     "msgType": "HEARTBEAT",
+                    # push is a FIXED per-session value, not a monotonic
+                    # counter. PCAP-confirmed: the Android app sends the
+                    # same push value across every heartbeat in a session
+                    # (observed value 23 across 18 consecutive heartbeats
+                    # in the Greenhouse-recharge capture). Server probably
+                    # uses (push, loginId) as a logical session key - so
+                    # heartbeats from this bridge + the user's phone with
+                    # the same loginId but different push values look like
+                    # competing sessions, which is one explanation for
+                    # the "phone logged out every hour" symptom (server
+                    # picks newest and evicts the older one).
                     "data": {"push": self.push_counter, "token": self.acct.jwt},
                 })
                 try:
                     self._client.publish(topic, payload, qos=0)
                 except Exception:
                     LOG.exception("[%s] heartbeat publish failed for %s", self.acct.label, sn)
-            self.push_counter += 1
+            # NB: push_counter intentionally stays constant - first stamp
+            # was set when AccountClient was constructed and is preserved
+            # across the whole connection. Reconnects (new session) reset
+            # it via a fresh AccountClient instance.
             # The mobile app heartbeats at exactly 1.5s (confirmed via pcap).
             # We default to that. Sub-second intervals stay responsive to
             # SIGTERM by polling _stop at 0.5s granularity rather than the

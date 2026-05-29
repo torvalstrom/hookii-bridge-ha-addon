@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Docs: README gains a full "Install path B: Home Assistant Container / Core / k3s" walkthrough so users on Docker-based HA installs (no Supervisor) can install + update the bridge using docker-compose / `docker run` against the repo's root `Dockerfile`. Includes env-var reference table and update commands. The existing Add-on Store path is now explicitly labelled "Install path A: Home Assistant OS / Supervised".
+
 ## 1.1.6 (2026-05-29)
 
 **Revert the v1.1.x sign-flip on `chargeDischargeCurrent`.** Sampling all 4 mowers in mixed states (docked-trickle-charging, mowing-actively, fully-charged-standby) showed both Shape A `chargeCurrent` and Shape B `chargeDischargeCurrent` use the SAME sign convention:

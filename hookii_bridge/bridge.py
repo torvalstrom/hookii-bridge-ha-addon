@@ -248,7 +248,12 @@ def parse_config() -> Config:
         except ValueError:
             LOG.fatal("HOOKII_ACCOUNTS entry %r is malformed (need label:email:password)", spec)
             sys.exit(2)
-        accounts.append(HookiiAccount(label=label.strip(), email=email.strip(), password=password))
+        # Hookii's beta REST user lookup is case-sensitive: a user registered
+        # as Foo@bar.dk fails with code:5 ("user not registered") when sent
+        # as `Foo@…` and succeeds as `foo@…`. Lower-case at parse so config
+        # writers don't have to care about original-registration casing -
+        # same defensive UX as md5_upper's auto-detection of pre-hashed pw.
+        accounts.append(HookiiAccount(label=label.strip(), email=email.strip().lower(), password=password))
 
     rest = os.environ.get("HOOKII_REST_HOST", "iot.beta.hookii.com:10443").split(":")
     cloud = os.environ.get("HOOKII_MQTT_HOST", "iot.beta.hookii.com:8883").split(":")

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4 (2026-05-29)
+
+- Auto-lowercase `hookii_email` at config parse, mirroring the auto-uppercase MD5 detection in `md5_upper`. The Hookii beta REST API treats email as case-sensitive on user lookup; rather than make users notice + remember that, the bridge now normalises whatever they type. Existing installs with already-lowercased emails are unaffected. Docs still mention the original gotcha so users searching for the chinese error message find context.
+
 ## 1.0.3 (2026-05-29)
 
 - Docs: warn that the Hookii beta server's user lookup is **case-sensitive on email**. An account registered as `Foo@bar.dk` must be entered as `foo@bar.dk` in `hookii_email`; the upper-case form returns `code: 5, msg: 该用户未注册` ("user not registered") and the login fails. Discovered live with a second beta account where capital letters in the address blocked the login until we lowercased them. Added an explicit lowercase instruction on the `hookii_email` field and a new troubleshooting entry.

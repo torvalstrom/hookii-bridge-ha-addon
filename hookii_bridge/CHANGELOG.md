@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.3 (2026-05-29)
+
+**Commands now poll the server until completion (matches mobile app).** Fixes the "I pressed Dock and nothing happened" symptom on a contact-fault / stuck mower.
+
+PCAP analysis of the Android app pressing Recharge while a mower was stuck idle in its dock showed the app issues the command with `reqOprType=0` once, then polls with `reqOprType=1` every ~2-3 seconds until the response carries `result=1` (or `waitingProgressInfo` becomes null). Previous bridge versions sent the initial command only and considered the operation "submitted" - which the server treats as best-effort and silently drops if the mower needs nudging out of a stuck state.
+
+`cmd_start_stop_with_poll()` now wraps all start/pause/return/stop and start-execute calls with the same poll loop (2.5s cadence, 30s timeout). Schedule and params endpoints are still single-shot since they're already idempotent reads/writes.
+
 ## 1.1.2 (2026-05-29)
 
 **Heartbeat cadence aligned with the Hookii mobile app (1.5s, was 15s).** Strongly recommended update for everyone running 1.1.x.

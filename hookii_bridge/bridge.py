@@ -387,6 +387,56 @@ def cmd_start_stop(cfg: Config, acct: HookiiAccount, serial: str, model: str,
     return _hookii_post(cfg, acct, "/api/v1/mower/cmd/start/stop/job", body)
 
 
+# PCAP-confirmed polling cadence the Hookii Android app uses for cmd=1 (and
+# probably all start/stop/job commands). The app keeps reqOprType=1 polling
+# at ~2-3s intervals until result == 1 (operation complete) or the response
+# stops carrying waitingProgressInfo. The protocol reference Tor wrote says
+# polling shouldn't be necessary - but observed live in 2026-05-29 testing
+# the server only finalises a stuck/contact-fault recharge command after
+# the polling sequence runs. So bridges that don't poll see the initial
+# response, declare success, and the mower never actually executes.
+_CMD_POLL_INTERVAL = 2.5
+_CMD_POLL_TIMEOUT = 30.0
+
+
+def cmd_start_stop_with_poll(cfg: Config, acct: HookiiAccount, serial: str,
+                             model: str, command: int,
+                             region_list: list | None = None) -> dict:
+    """Submit a start/stop/job command (reqOprType=0) then poll (reqOprType=1)
+    until the server finalises it or _CMD_POLL_TIMEOUT elapses. Returns the
+    final response.data payload."""
+    initial = cmd_start_stop(cfg, acct, serial, model, command,
+                             region_list=region_list, req_opr_type=0)
+    if not initial:
+        return initial
+    # result==1 + waitingProgressInfo absent means the server finished
+    # synchronously (e.g. cmd=2 cancel for an idle mower).
+    if initial.get("result") == 1 and not initial.get("waitingProgressInfo"):
+        return initial
+    deadline = time.time() + _CMD_POLL_TIMEOUT
+    last = initial
+    poll_n = 0
+    while time.time() < deadline:
+        time.sleep(_CMD_POLL_INTERVAL)
+        poll_n += 1
+        last = cmd_start_stop(cfg, acct, serial, model, command,
+                              region_list=region_list, req_opr_type=1)
+        if not last:
+            LOG.warning("[%s] cmd %s poll %d: empty response - server may have errored",
+                        acct.label, command, poll_n)
+            return {}
+        wpi = last.get("waitingProgressInfo")
+        if last.get("result") == 1 or not wpi:
+            LOG.info("[%s] cmd %s finalised after %d poll(s)",
+                     acct.label, command, poll_n)
+            return last
+        LOG.debug("[%s] cmd %s poll %d: progress=%s",
+                  acct.label, command, poll_n, wpi.get("progress"))
+    LOG.warning("[%s] cmd %s polling timed out after %.0fs - returning last response",
+                acct.label, command, _CMD_POLL_TIMEOUT)
+    return last
+
+
 def cmd_start_with_precheck(cfg: Config, acct: HookiiAccount, serial: str, model: str,
                             region_list: list | None = None) -> dict:
     """Two-step start: cmd=7 pre-check then cmd=6 execute (per protocol reference).
@@ -404,7 +454,7 @@ def cmd_start_with_precheck(cfg: Config, acct: HookiiAccount, serial: str, model
         LOG.info("[%s] start %s: %d interrupted area(s) - resuming from breakpoints",
                  acct.label, serial, len(interrupted))
     LOG.info("[%s] start %s: execute (cmd=6)", acct.label, serial)
-    return cmd_start_stop(cfg, acct, serial, model, 6, region_list=rl)
+    return cmd_start_stop_with_poll(cfg, acct, serial, model, 6, region_list=rl)
 
 
 def _local_minutes_now() -> int:
@@ -724,13 +774,13 @@ class AccountClient:
                 cmd_start_with_precheck(self.cfg, self.acct, serial, model,
                                         payload.get("regionList"))
             elif action == "pause":
-                cmd_start_stop(self.cfg, self.acct, serial, model, 3)
+                cmd_start_stop_with_poll(self.cfg, self.acct, serial, model, 3)
             elif action in ("return", "dock", "recharge"):
-                cmd_start_stop(self.cfg, self.acct, serial, model, 1)
+                cmd_start_stop_with_poll(self.cfg, self.acct, serial, model, 1)
             elif action == "stop_keep":
-                cmd_start_stop(self.cfg, self.acct, serial, model, 2)
+                cmd_start_stop_with_poll(self.cfg, self.acct, serial, model, 2)
             elif action == "stop_clear":
-                cmd_start_stop(self.cfg, self.acct, serial, model, 8)
+                cmd_start_stop_with_poll(self.cfg, self.acct, serial, model, 8)
             elif action == "schedule_read":
                 data = cmd_schedule_read(self.cfg, self.acct, serial, model)
                 # Echo back to a local "result" topic so automations can

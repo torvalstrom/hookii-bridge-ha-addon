@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.5 (2026-05-30)
+
+**One image runs in BOTH the HA add-on Supervisor AND standalone (k3s, docker, compose).** The launcher (`run.sh`) probes for the Supervisor at start. If `bashio::supervisor.ping` answers, we are a bona fide add-on and hydrate env from `/data/options.json` via bashio (multi-account collapsed into the single-account form the add-on UI exposes). If the probe fails, we trust the env vars the operator already set in the Deployment / docker -e / compose env block and skip bashio entirely. The base image stays the official HA add-on Python base (so the add-on flavour is unchanged), and the second `Dockerfile.k3s` flavour added during 1.2.4 has been removed - there is one source, one image, one set of tests, both deployment shapes.
+
+## 1.2.4 (2026-05-30)
+
+Two reliability fixes after a real-world incident that produced 4 hours of "Unavailable" sensors in Home Assistant.
+
+- **MqttWatchdog: recover-by-restart from stuck paho clients.** v1.2.3 added on_connect re-subscribe so HA-restart-driven broker hiccups would self-heal. That fix handles the case where paho fires both `on_disconnect` AND `on_connect`. It does NOT handle the case observed 2026-05-30 09:23 UTC where paho fired `on_disconnect` with `Unspecified error`, then sat for 4 hours without ever calling `on_connect` again. `client.is_connected()` returned `False` the entire time. No exception, no log line, just a silently dead bridge. The new watchdog is a daemon thread that wakes every 30 s and asks "how long since the last successful CONNACK?". If the answer is over 5 minutes AND we are still not connected, the process calls `os._exit(1)` so the supervisor (k3s/Docker/HA-Supervisor) respawns us with a fresh paho client. Wraps both the local broker client and every cloud-MQTT client (one per account).
+
+- **STATUS republish is now `retain=True`.** Idle docked mowers can go many minutes without pushing a fresh STATUS, so without retain the broker has nothing to hand to HA after any restart (bridge, broker, HA itself). Every entity that reads from `hookii/details/device/<serial>` would show "Unavailable" until the cloud emitted the next change - which could be hours. With retain the last known state is replayed on subscribe and the dashboard recovers immediately. Trade-off: the value is "stale until the next cloud update" but that is strictly better than "missing for an unbounded time", and the dashboard's `last fix:` timestamp already tells the user how fresh it is.
+
 ## 1.2.3 (2026-05-30)
 
 **Local MQTT cmd subscriber re-subscribes on every (re)connect.** Previously the bridge called `local.subscribe("hookii/cmd/+/+")` once at startup, but MQTT subscriptions live on the broker side and are lost whenever the broker (or the bridge's MQTT TCP connection) goes down even momentarily. After a broker restart, network blip or HA restart that bounces Mosquitto, the bridge stayed connected (paho-mqtt's `loop_start` auto-reconnects) but no longer received any button-press publishes - and there was nothing in the log to indicate why. Now wires `on_connect` to re-subscribe + `on_disconnect` to log the reason code; symptoms become visible AND self-healing.

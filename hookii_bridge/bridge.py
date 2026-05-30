@@ -862,6 +862,7 @@ class AccountClient:
         self._stop = threading.Event()
         self._client: mqtt.Client | None = None
         self._hb_thread: threading.Thread | None = None
+        self._watchdog: MqttWatchdog | None = None
         # Per-serial model code learned from observed STATUS topics. Default
         # to cfg.model until we see the first push for that serial.
         self._serial_model: dict[str, str] = {sn: self.cfg.model for sn in self.acct.serials}
@@ -891,6 +892,12 @@ class AccountClient:
         c.loop_start()
         self._client = c
         # Heartbeat thread starts after on_connect fires.
+        # Watchdog: force-exit the process if cloud-MQTT stays disconnected
+        # for >5 min. The supervisor (k8s/Docker/HA-Supervisor) respawns us
+        # with a fresh paho client - recovers from the known paho state
+        # where on_disconnect fires but on_connect never fires again.
+        self._watchdog = MqttWatchdog(f"cloud-{self.acct.label}", c)
+        self._watchdog.start()
 
     def stop(self) -> None:
         self._stop.set()
@@ -909,6 +916,8 @@ class AccountClient:
             return
         LOG.info("[%s] cloud-mqtt connected as %s, subscribing to %d serial(s)",
                  self.acct.label, self.client_id, len(self.acct.serials))
+        if self._watchdog:
+            self._watchdog.on_connect()
         for sn in self.acct.serials:
             # Wildcard model code in the topic - Neomow X Pro uses 0002,
             # other models likely use different codes. We don't know all
@@ -926,6 +935,8 @@ class AccountClient:
 
     def _on_disconnect(self, _client, _userdata, _flags, rc, _props=None):
         LOG.warning("[%s] cloud-mqtt disconnected rc=%s - will auto-reconnect", self.acct.label, rc)
+        if self._watchdog:
+            self._watchdog.on_disconnect()
 
     def _on_message(self, _client, _userdata, msg: mqtt.MQTTMessage):
         try:
@@ -956,9 +967,17 @@ class AccountClient:
             else:
                 payload_out = payload_raw
             # Republish to local broker on the legacy topic so HA template
-            # sensors + n8n keep reading the same place.
+            # sensors + n8n keep reading the same place. retain=True is
+            # important: an idle docked mower may not push a new STATUS for
+            # hours, so without retain the broker has nothing to hand to HA
+            # after any restart (bridge, broker, HA itself) and every entity
+            # shows "Unavailable" until the cloud emits the next change. With
+            # retain=True the last known state is replayed on subscribe and
+            # the dashboard recovers immediately; the data is "stale until
+            # the next cloud update" but that is strictly better than
+            # "missing for an unbounded time".
             local_topic = self.cfg.local_topic_fmt.format(serial=serial)
-            self.local.publish(local_topic, payload_out, qos=0, retain=False)
+            self.local.publish(local_topic, payload_out, qos=0, retain=True)
         except Exception:
             LOG.exception("[%s] error processing inbound msg", self.acct.label)
 
@@ -1137,6 +1156,100 @@ class AccountClient:
 # Main
 # ---------------------------------------------------------------------------
 
+class MqttWatchdog:
+    """Recover-by-restart guard for stuck paho-mqtt clients.
+
+    paho-mqtt's `loop_start()` thread normally handles auto-reconnect
+    after a transient broker disconnect: `on_disconnect` fires, the
+    transport reconnects, `on_connect` fires, and any subscription
+    callback re-subscribes. We observed (2026-05-30) a state where paho
+    fired `on_disconnect` with `Unspecified error`, then sat for 4 hours
+    without ever calling `on_connect` again. `client.is_connected()`
+    returned `False` the whole time. No log line. No exception. Just a
+    silently dead bridge.
+
+    The watchdog is a daemon thread that wakes every CHECK_INTERVAL
+    seconds and asks one question: "How long has the client been NOT
+    connected?". If the answer is more than UNHEALTHY_SECONDS, we call
+    `os._exit(1)` so the process supervisor (Home Assistant Supervisor
+    for the add-on, k8s/Docker for standalone deploys) respawns us with
+    a fresh paho client. That is a heavy-handed recovery, but it is the
+    one that always works, and the alternative is the bridge silently
+    looking online while delivering nothing.
+
+    Call `on_connect()` from your paho `on_connect` callback and
+    `on_disconnect()` from your paho `on_disconnect` callback. The
+    bookkeeping must not assume that connect/disconnect arrive in
+    strict alternation - paho occasionally collapses pairs after a
+    fast bounce.
+    """
+
+    CHECK_INTERVAL = 30          # seconds between health checks
+    UNHEALTHY_SECONDS = 300      # 5 min disconnected -> recover by restart
+
+    def __init__(self, name: str, client: mqtt.Client,
+                 unhealthy_seconds: int = UNHEALTHY_SECONDS,
+                 check_interval: int = CHECK_INTERVAL):
+        self.name = name
+        self.client = client
+        self.unhealthy_seconds = unhealthy_seconds
+        self.check_interval = check_interval
+        # last_connected_at = wall clock of most recent successful CONNACK.
+        # Initialised to "now" so we don't trip the watchdog during the
+        # initial connect attempt that has not yet succeeded.
+        self.last_connected_at = time.monotonic()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
+
+    def on_connect(self) -> None:
+        with self._lock:
+            self.last_connected_at = time.monotonic()
+
+    def on_disconnect(self) -> None:
+        # Nothing to do - the next _check_once will see is_connected()=False
+        # and start counting from `last_connected_at`. We intentionally do
+        # NOT reset last_connected_at here, because the goal is "alarm when
+        # we have stayed disconnected too long since the LAST good state".
+        pass
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(
+            target=self._run, name=f"mqtt-watchdog-{self.name}", daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.check_interval):
+            try:
+                self._check_once()
+            except Exception:
+                LOG.exception("watchdog %s: check failed", self.name)
+
+    def _check_once(self) -> None:
+        if self.client.is_connected():
+            with self._lock:
+                self.last_connected_at = time.monotonic()
+            return
+        with self._lock:
+            seconds_disconnected = time.monotonic() - self.last_connected_at
+        if seconds_disconnected > self.unhealthy_seconds:
+            LOG.error(
+                "watchdog %s: MQTT client has been disconnected for %.0f s "
+                "(threshold %d s) - exiting process so the supervisor "
+                "respawns us with a fresh paho client. This recovers from "
+                "the known paho `loop_start` state where on_disconnect "
+                "fires but on_connect never fires again.",
+                self.name, seconds_disconnected, self.unhealthy_seconds,
+            )
+            os._exit(1)
+
+
 def main() -> int:
     level = os.environ.get("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
@@ -1229,6 +1342,8 @@ def main() -> int:
     # the bridge starts silently dropping button presses without any log
     # signal that something is wrong - we observed this 2026-05-30 after
     # back-to-back HA restarts during a v1.2.1 deploy.
+    local_watchdog = MqttWatchdog("local", local)
+
     def _on_local_connect(_c, _u, _flags, reason_code, _props=None) -> None:
         try:
             rc = int(reason_code)
@@ -1238,6 +1353,7 @@ def main() -> int:
             local.subscribe("hookii/cmd/+/+", qos=1)
             LOG.info("local broker (re)connected (rc=%s); re-subscribed hookii/cmd/+/+ for %d serial(s)",
                      rc, len(account_by_serial))
+            local_watchdog.on_connect()
         else:
             LOG.warning("local broker connect refused (rc=%s); paho will retry", rc)
 
@@ -1248,9 +1364,11 @@ def main() -> int:
             rc = reason_code
         if rc != 0:
             LOG.warning("local broker disconnected (rc=%s); paho will reconnect + re-subscribe via on_connect", rc)
+            local_watchdog.on_disconnect()
 
     local.on_connect = _on_local_connect
     local.on_disconnect = _on_local_disconnect
+    local_watchdog.start()
 
     # Initial subscribe (in case we were already connected before wiring
     # the callback). on_connect handles every subsequent reconnect.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3 (2026-05-30)
+
+**Default host port mapping changed to `null` (ingress-only) to avoid port-8000 clashes.** A community user reported that `ports: 8000/tcp: 8000` collided with their Portainer install which already binds host port 8000. Because the add-on already supports HA's built-in ingress (`ingress: true` / `ingress_port: 8000`) for both the sidebar panel and the iframe-card URL pattern `/hassio/ingress/hookii_mower_map/page/<label>`, there's no functional need to also force-bind a host port. Setting the default to `null` means the add-on works out of the box on hosts where port 8000 is already in use. Users who specifically need direct host:port access (e.g. for an iframe served from outside HA) can still set a host port in the add-on's Configuration tab without re-installing.
+
 ## 1.0.2 (2026-05-29)
 
 **Yard boundary now actually renders.** Discovered by inspecting a real captured `DEVICE_MAP_V2` payload from a live mower that v1.0.1's `extract_boundary` was looking for the wrong field names entirely - `boundary` / `boundaryPoints` / `regionPoints` / `borderPoints` / `points` are NOT what the May 2026 cloud schema actually emits. The real shape is `DEVICE_MAP_V2.mapDataList[0].mowingAreaElementList[].elementPointList[].{x,y,attr}` for the territory and the parallel `exclusionAreaElementList` for no-go zones. The "translucent fill" was correctly wired into the SVG; it was just always called with an empty point list, hence the missing yard background.

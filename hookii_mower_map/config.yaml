@@ -1,5 +1,5 @@
 name: Hookii Mower Map
-version: "1.0.2"
+version: "1.0.3"
 slug: hookii_mower_map
 description: >-
   Live SVG yard visualizer for Hookii Neomow robot mowers. Subscribes to the
@@ -22,10 +22,17 @@ ingress: true
 ingress_port: 8000
 panel_icon: mdi:map-outline
 panel_title: Mower Map
+# Host port mapping is INTENTIONALLY null by default so the add-on doesn't
+# fight Portainer / any other service that runs on host port 8000. Access via
+# HA's built-in ingress (panel + iframe URL `/hassio/ingress/hookii_mower_map/`)
+# works without the host port being mapped. If you specifically need direct
+# host:port access (e.g. for an external iframe outside HA), set
+# "Host network port" to 8000 or any free host port in the add-on Configuration
+# tab - the internal container port stays 8000.
 ports:
-  8000/tcp: 8000
+  8000/tcp: null
 ports_description:
-  8000/tcp: HTTP (SVG + JSON API + iframe pages)
+  8000/tcp: HTTP (SVG + JSON API + iframe pages) - leave unset for ingress-only access
 options:
   mowers: ""
   local_mqtt_host: "core-mosquitto"

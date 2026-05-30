@@ -60,6 +60,75 @@ That's all that's required to get a live view. The map will start at "Waiting fo
 
 Full configuration reference, env-var-driven setup for Container/k3s users, and troubleshooting are in [`hookii_mower_map/DOCS.md`](hookii_mower_map/DOCS.md).
 
+## Commands & sensors reference (Hookii Bridge)
+
+Everything in this table is auto-published via MQTT Discovery on every bridge startup. Drop the entity into a Lovelace card, call it from an automation, or just `mosquitto_pub` to the raw MQTT topic — both paths are equivalent.
+
+### Buttons (control)
+
+| HA entity | MQTT topic to trigger | What happens |
+|---|---|---|
+| `button.hookii_<SERIAL>_start` | `hookii/cmd/<SERIAL>/start` | Two-step start (pre-check + execute). Resumes from breakpoints when any exist, so a "Start at 09:00" automation won't accidentally discard the previous job. |
+| `button.hookii_<SERIAL>_pause` | `hookii/cmd/<SERIAL>/pause` | Pause the current job. |
+| `button.hookii_<SERIAL>_return` | `hookii/cmd/<SERIAL>/return` | Return to dock immediately. |
+| `button.hookii_<SERIAL>_stop_keep` | `hookii/cmd/<SERIAL>/stop_keep` | Stop the current job **but keep progress** so the next Start resumes from where it stopped. |
+| `button.hookii_<SERIAL>_stop_clear` | `hookii/cmd/<SERIAL>/stop_clear` | Stop the current job AND clear progress so the next Start mows the whole region fresh. |
+| `button.hookii_<SERIAL>_recover_alarm` | `hookii/cmd/<SERIAL>/recover_alarm` | Self-heal a remote-recoverable exception (e.g. *Docking failed (514)*). Equivalent to the "slide OK to resolve" affordance in the Hookii mobile app. Hookii server signals completion with the cryptic `code=61` "temporary resources expired" — bridge handles that as success, not failure. |
+| `button.hookii_<SERIAL>_snapshot` | `hookii/cmd/<SERIAL>/snapshot` | Trigger an on-demand camera capture. See the camera-snapshot subsection below for the full flow. |
+
+### Lawn mower entity
+
+| HA entity | What it does |
+|---|---|
+| `lawn_mower.hookii_<SERIAL>_mower` | Standard HA `lawn_mower` device with `start_mowing`, `pause` and `dock` services wired straight through to the bridge. Use this if you want the built-in HA UI affordances instead of the raw buttons above. The `activity` attribute tracks the derived `ha_state` ("mowing" / "returning" / "docked"). |
+
+### Camera entity + snapshot workflow
+
+| HA entity | What it does |
+|---|---|
+| `camera.hookii_<SERIAL>_last_snapshot` | Latest captured JPG. Updates whenever a snapshot succeeds; persists across HA restarts thanks to MQTT retain. |
+
+The snapshot flow:
+
+1. Press the `Camera snapshot` button (or publish `{}` to `hookii/cmd/<SERIAL>/snapshot`).
+2. Bridge POSTs `/api/v1/mower/capture/image` to Hookii's cloud.
+3. **If the cloud accepts** (mower is awake + reachable + camera available): bridge downloads the resulting JPG from Hookii's CDN, republishes the bytes to `hookii/snapshot/<SERIAL>` (retained) AND publishes `{"status": "ok", "taken_at": "<ISO>", "size": <bytes>}` to `hookii/snapshot_meta/<SERIAL>` (retained). The camera entity updates within ~5 seconds.
+4. **If the cloud declines** (mower asleep / charging-without-camera-active / firmware update / etc): bridge publishes `{"status": "declined", "taken_at": "<ISO>", "reason": "..."}` to `hookii/snapshot_meta/<SERIAL>` instead. The camera entity does NOT update; the legacy `hookii/result/<SERIAL>/error` topic also gets a publish for back-compat.
+
+Use the `status` field on `hookii/snapshot_meta/<SERIAL>` (e.g. via a template sensor that reads `{{ value_json.status }}`) to drive a Lovelace `conditional` card that either shows the picture OR shows a "robot unable to capture in current state" message, so users know the button worked even when nothing visible happens.
+
+### Telemetry sensors (one per mower)
+
+| HA entity | Source field | Unit | Notes |
+|---|---|---|---|
+| `sensor.hookii_<SERIAL>_battery` | `electricity` (or Shape B `battery`) | % | Battery state-of-charge. |
+| `sensor.hookii_<SERIAL>_blade_rpm` | `knifeDiscMotorSpeed` (abs) | rpm | Positive when cutting; sign-of-rotation is stripped so dashboards don't show negative RPM during normal mowing. |
+| `sensor.hookii_<SERIAL>_voltage` | `voltage` | V | |
+| `sensor.hookii_<SERIAL>_charge_a` | `chargeCurrent` (or Shape B `chargeDischargeCurrent`) | A | **Positive = current INTO battery (charging)**, **negative = current OUT (mowing or idle discharge)**. |
+| `sensor.hookii_<SERIAL>_temp_battery` | `batteryTemp` | °C | |
+| `sensor.hookii_<SERIAL>_temp_blade` | `knifeDiscMotorTemp` | °C | Blade-motor body temp. |
+| `sensor.hookii_<SERIAL>_temp_left` | `leftDriveMotorTemp` | °C | Left drive-motor body temp. |
+| `sensor.hookii_<SERIAL>_temp_right` | `rightDriveMotorTemp` | °C | Right drive-motor body temp. |
+| `sensor.hookii_<SERIAL>_wifi_signal` | `wifiSignal` | % | Signal QUALITY 0-100 (NOT dBm despite what older docs said; verified live 2026-05-29). |
+| `sensor.hookii_<SERIAL>_satellite` | `satellite` | (count) | Visible GPS satellites. |
+| `sensor.hookii_<SERIAL>_latitude` | `latitude` | ° | Decimal degrees. |
+| `sensor.hookii_<SERIAL>_longitude` | `longitude` | ° | Decimal degrees. |
+| `sensor.hookii_<SERIAL>_work_status` | `workStatus` | (int) | Raw workStatus code (1=mowing, 2=mowing-active, 3=returning, 5=charging, etc). |
+| `sensor.hookii_<SERIAL>_state` | derived `ha_state` | (text) | Friendly "mowing" / "returning" / "docked" — pre-computed from `robotStatus` + `workingMode`. Use this on dashboards instead of `work_status`. |
+
+### Raw MQTT topics
+
+All telemetry the bridge receives gets republished verbatim (after normalisation) to `hookii/details/device/<SERIAL>`. If you have legacy template sensors written against that topic format from the pre-May-2026 community workaround, they keep working unchanged — the bridge runs a `normalise_status` pass that reconstitutes the old field shapes (`deviceRegionTask`, `cutArea`, `uncutArea`, etc.) from the new cloud's `taskInfo` payloads so nothing breaks.
+
+For control commands not exposed as discovery buttons (`schedule_read`, `schedule_write`, `params_read`):
+
+```bash
+mosquitto_pub -h <broker> -u <user> -P <pass> \
+  -t 'hookii/cmd/HKX1EB100JD25010115/schedule_read' \
+  -m '{}'
+# Result echoes back to hookii/result/HKX1EB100JD25010115/schedule (retained).
+```
+
 ## How it works under the hood
 
 In May 2026 Hookii migrated their cloud from a passive-subscribe MQTT bus to a JWT-gated heartbeat protocol on `iot.beta.hookii.com`. The old "just subscribe to `hookii/details/device/<serial>`" trick stopped working overnight, and the official Hookii app became the only client that could see the new protocol.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2 (2026-05-30)
+
+**`hookii/snapshot_meta/<serial>` is now ALSO published on declined captures**, with `{"status": "declined", "taken_at": "<ISO>", "reason": "..."}`. The successful payload now also includes the explicit `"status": "ok"` field so consumers can branch on `status` directly instead of inferring success from a missing field. This lets downstream HA dashboards show a friendly "robot unable to capture in current state" message when the cloud declines (deep sleep, charging-without-camera-active, etc.) - users no longer wonder whether the button worked at all when nothing visible happens. The JPG payload on `hookii/snapshot/<serial>` is unchanged. The legacy `hookii/result/<serial>/error` publish is also preserved for backwards compatibility.
+
 ## 1.2.1 (2026-05-30)
 
 **Snapshot metadata topic for freshness-aware HA cards.** A successful camera capture now also publishes a small retained JSON payload to `hookii/snapshot_meta/<serial>` with `{"taken_at": "<ISO timestamp>", "size": <jpg-byte-count>}`. This lets HA template sensors evaluate "snapshot is fresh within the last N seconds" so dashboards can wrap the `picture-entity` card in a `conditional` card that only shows the image while it's recent - tackles the "image card takes too much space" complaint without losing the snapshot-on-demand capability. The JPG payload on `hookii/snapshot/<serial>` is unchanged.

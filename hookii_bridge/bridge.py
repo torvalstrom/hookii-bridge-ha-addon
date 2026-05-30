@@ -1020,30 +1020,54 @@ class AccountClient:
                 # retained to hookii/snapshot/<serial> so the auto-discovered
                 # MQTT camera entity displays the latest image until the
                 # next snapshot replaces it. We ALSO publish a small metadata
-                # payload to hookii/snapshot_meta/<serial> retained with the
-                # ISO timestamp - so downstream HA template sensors can
-                # evaluate "snapshot is fresh within last N seconds" and
-                # conditionally show/hide the picture-entity card.
+                # payload to hookii/snapshot_meta/<serial> retained on BOTH
+                # success and failure - the status field lets HA distinguish
+                # "took a fresh picture (show it)" from "cloud declined
+                # because mower is asleep/charging (show 'unable to capture
+                # in current state' message)" without the user wondering
+                # whether the button worked at all.
+                taken_at = datetime.now(timezone.utc).isoformat()
                 jpg = cmd_camera_snapshot(self.cfg, self.acct, serial, model)
                 if jpg:
                     self.local.publish(
                         f"hookii/snapshot/{serial}",
                         jpg, qos=1, retain=True,
                     )
-                    taken_at = datetime.now(timezone.utc).isoformat()
                     self.local.publish(
                         f"hookii/snapshot_meta/{serial}",
-                        json.dumps({"taken_at": taken_at, "size": len(jpg)}),
+                        json.dumps({
+                            "status": "ok",
+                            "taken_at": taken_at,
+                            "size": len(jpg),
+                        }),
                         qos=1, retain=True,
                     )
                     LOG.info("[%s] snapshot published: %d bytes at %s",
                              self.acct.label, len(jpg), taken_at)
                 else:
+                    # Cloud declined - usually because the mower's camera is
+                    # offline (deep-sleep, charging-without-camera-active,
+                    # firmware-update, etc). Publish a status payload so the
+                    # UI can show a friendly "robot unable to take picture
+                    # right now" message AND still see that the button worked.
+                    self.local.publish(
+                        f"hookii/snapshot_meta/{serial}",
+                        json.dumps({
+                            "status": "declined",
+                            "taken_at": taken_at,
+                            "reason": "cloud declined - mower may be asleep or unreachable",
+                        }),
+                        qos=1, retain=True,
+                    )
+                    # Keep the legacy error topic for back-compat with any
+                    # external integrations that already subscribed to it.
                     self.local.publish(
                         f"hookii/result/{serial}/error",
                         json.dumps({"action": "snapshot", "error": "capture or download failed"}),
                         qos=1, retain=False,
                     )
+                    LOG.info("[%s] snapshot declined by cloud at %s",
+                             self.acct.label, taken_at)
             else:
                 LOG.warning("[%s] unknown cmd action %r (serial %s)", self.acct.label, action, serial)
         except ValueError as e:

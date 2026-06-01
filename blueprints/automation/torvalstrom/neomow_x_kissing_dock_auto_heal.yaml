@@ -1,5 +1,5 @@
 blueprint:
-  name: "Neomow X - Auto-heal failed docking (kissing dock + alarm 514/515)"
+  name: "Neomow X - Auto-heal failed docking (kissing dock + alarm 514/515/116)"
   description: |
     Self-healing redock + alarm recovery for **Hookii Neomow X** mowers via the
     [Hookii Bridge add-on](https://github.com/torvalstrom/hookii-bridge-ha-addon).
@@ -11,7 +11,7 @@ blueprint:
     has two spring-loaded "finger" contacts that oxidise over time. Combined,
     this means the mower frequently fails its first dock attempt and either
     sits with `chargeCurrent` flapping around 0 A (kissing the dock but not
-    drawing power) or throws docking alarm `514` / `515`.
+    drawing power) or throws docking alarm `514` / `515` / `116`.
 
     The earlier Neomow firmware had a built-in self-heal that re-docked
     automatically until contact succeeded. Hookii removed that behaviour in a
@@ -22,10 +22,13 @@ blueprint:
 
     Two recovery paths against the bridge's MQTT command channel:
 
-    - **Path A - explicit alarm:** when the mower posts `errCode` `514` or
-      `515` and stays in error for 60 s, publish to
+    - **Path A - explicit alarm:** when the mower posts `errCode` `514`,
+      `515`, or `116` and stays in error for 60 s, publish to
       `hookii/cmd/<SERIAL>/recover_alarm` (clears the alarm state machine -
       same as sliding "OK to resolve" in the Hookii mobile app).
+      - `514` / `515` = "Docking failed"
+      - `116` = "Obstacle in front of charging station" (a leaf, a stick,
+        the mower's own poor alignment - typically clears itself on retry)
 
     - **Path B - kissing dock:** when battery is below the threshold AND
       `chargeCurrent` has been flapping inside the [-1, 1] A band for 60 s
@@ -84,7 +87,7 @@ blueprint:
       name: "Error binary sensor"
       description: >-
         The bridge's error binary sensor for this mower. State `on` when the
-        cloud reports a non-recoverable error code (514, 515, others). The
+        cloud reports a non-recoverable error code (514, 515, 116, others). The
         `notice` attribute carries the `errCode` field.
       selector:
         entity:
@@ -142,7 +145,7 @@ variables:
   error_binary_sensor: !input error_binary_sensor
   battery_threshold: !input battery_threshold
   notify_service: !input notify_service
-  auto_heal_codes: ["514", "515"]
+  auto_heal_codes: ["514", "515", "116"]
 
 condition:
   - condition: or

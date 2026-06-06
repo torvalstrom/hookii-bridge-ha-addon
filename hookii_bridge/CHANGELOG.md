@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.6 (2026-06-06)
+
+**New `Cutting Height` sensor, shipped with the CORRECT unit (mm).** The cloud reports `mowingHeight` (fanned out from `taskInfo`) as a millimetre value - raw `40` means 40 mm / 4 cm, not 40 cm (a mower obviously doesn't cut at 40 cm). Several users had hand-rolled a template sensor for this and mislabelled the unit as `cm`, so Home Assistant rendered a wrong "40,0 cm". The bridge now auto-discovers `sensor.hookii_<SERIAL>_cutting_height` with `unit_of_measurement: mm` and `device_class: distance`, so it reads correctly out of the box (and HA can convert to cm in the UI if the user prefers). Adds one entity; no change to existing sensors.
+
 ## 1.2.5 (2026-05-30)
 
 **One image runs in BOTH the HA add-on Supervisor AND standalone (k3s, docker, compose).** The launcher (`run.sh`) probes for the Supervisor at start. If `bashio::supervisor.ping` answers, we are a bona fide add-on and hydrate env from `/data/options.json` via bashio (multi-account collapsed into the single-account form the add-on UI exposes). If the probe fails, we trust the env vars the operator already set in the Deployment / docker -e / compose env block and skip bashio entirely. The base image stays the official HA add-on Python base (so the add-on flavour is unchanged), and the second `Dockerfile.k3s` flavour added during 1.2.4 has been removed - there is one source, one image, one set of tests, both deployment shapes.

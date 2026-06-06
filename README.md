@@ -110,6 +110,7 @@ Use the `status` field on `hookii/snapshot_meta/<SERIAL>` (e.g. via a template s
 | `sensor.hookii_<SERIAL>_temp_left` | `leftDriveMotorTemp` | °C | Left drive-motor body temp. |
 | `sensor.hookii_<SERIAL>_temp_right` | `rightDriveMotorTemp` | °C | Right drive-motor body temp. |
 | `sensor.hookii_<SERIAL>_wifi_signal` | `wifiSignal` | % | Signal QUALITY 0-100 (NOT dBm despite what older docs said; verified live 2026-05-29). |
+| `sensor.hookii_<SERIAL>_cutting_height` | `mowingHeight` (from `taskInfo`) | mm | Cutting height in MILLIMETRES (raw `40` = 40 mm = 4 cm, NOT 40 cm). `device_class: distance`, so HA can show cm in the UI if preferred. |
 | `sensor.hookii_<SERIAL>_satellite` | `satellite` | (count) | Visible GPS satellites. |
 | `sensor.hookii_<SERIAL>_latitude` | `latitude` | ° | Decimal degrees. |
 | `sensor.hookii_<SERIAL>_longitude` | `longitude` | ° | Decimal degrees. |

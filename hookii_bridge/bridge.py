@@ -808,6 +808,11 @@ def publish_discovery(local: mqtt.Client, cfg: Config, serial: str) -> None:
         ("temp_left",    "Left drive temp",    "leftDriveMotorTemp",    "°C",  "temperature", "measurement", None,                "float"),
         ("temp_right",   "Right drive temp",   "rightDriveMotorTemp",   "°C",  "temperature", "measurement", None,                "float"),
         ("wifi_signal",  "WiFi signal",        "wifiSignal",            "%",   None,          "measurement", "mdi:wifi",          "int"),
+        # mowingHeight is the cutting height in MILLIMETRES (raw 40 = 40 mm = 4 cm;
+        # a mower does not cut at 40 cm). Declaring "mm" + device_class distance lets
+        # HA convert/display correctly. Users who hand-rolled a template sensor often
+        # mislabel it "cm" and get "40 cm" - this ships the correct unit out of box.
+        ("cutting_height", "Cutting Height",   "mowingHeight",          "mm",  "distance",    "measurement", "mdi:height",        "int"),
         ("satellite",    "GPS satellites",     "satellite",             None,  None,          "measurement", "mdi:satellite-variant", "int"),
         ("latitude",     "Latitude",           "latitude",              "°",   None,          None,          "mdi:latitude",      "float"),
         ("longitude",    "Longitude",          "longitude",             "°",   None,          None,          "mdi:longitude",     "float"),

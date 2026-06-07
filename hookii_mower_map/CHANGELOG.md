@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.8 (2026-06-07)
+
+**Now ships as a prebuilt multi-arch image from GitHub Container Registry - downloaded, not built on your device.** Same delivery change as Hookii Bridge 1.2.7: a GitHub Action builds `amd64` / `aarch64` / `armv7` images and pushes them to `ghcr.io/torvalstrom/<arch>-hookii-mower-map`, and `config.yaml` now has an `image:` key so the Supervisor pulls the image instead of building it locally. Fixes slow / failing updates on ARM hardware. No configuration change; code unchanged from 1.0.7.
+
 ## 1.0.7 (2026-05-30)
 
 **Fix: cut/transit overlay now also picks up `rotate_deg`.** v1.0.6 rotated the boundary polygons, the live trail and the robot marker but the cut/transit polyline overlay was re-extracted via a fresh `extract_path_points(s)` call that bypassed the rotation, so the rotated dashboard map looked correct EXCEPT the bright cut swath which still drew in the un-rotated frame, layered on top of the rotated boundary at an obvious angle. v1.0.7 reuses the already-rotated point list both for the bounding box AND for the cut/transit segment classifier.

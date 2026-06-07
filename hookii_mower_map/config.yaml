@@ -1,6 +1,10 @@
 name: Hookii Mower Map
-version: "1.0.7"
+version: "1.0.8"
 slug: hookii_mower_map
+# Prebuilt multi-arch image published to GHCR by CI (.github/workflows/build.yaml).
+# With this key the Supervisor PULLS the image instead of building it locally on
+# the user's device, so updates are fast and don't fail on slow/ARM hardware.
+image: "ghcr.io/torvalstrom/{arch}-hookii-mower-map"
 description: >-
   Live SVG yard visualizer for Hookii Neomow robot mowers. Subscribes to the
   same local Mosquitto/EMQX broker the Hookii Bridge add-on publishes to,

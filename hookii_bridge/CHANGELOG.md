@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.7 (2026-06-07)
+
+**The add-on now ships as a prebuilt multi-arch image from GitHub Container Registry - Home Assistant downloads it instead of building it on your device.** Until now this add-on had no `image:` key, so every install/update made your Home Assistant build the Docker image locally from the Dockerfile. On slow or ARM hardware (Raspberry Pi etc.), or during a transient hiccup pulling the base image, that local build could fail or time out - which showed up as "update does not download / not possible to update". A GitHub Action now builds `amd64` / `aarch64` / `armv7` images on every release and pushes them to `ghcr.io/torvalstrom/<arch>-hookii-bridge`, and the add-on's `config.yaml` points at that image. Updates are now a fast registry pull, identical on every architecture. No configuration change is needed; this is purely how the image is delivered. (Code is unchanged from 1.2.6.)
+
 ## 1.2.6 (2026-06-06)
 
 **New `Cutting Height` sensor, shipped with the CORRECT unit (mm).** The cloud reports `mowingHeight` (fanned out from `taskInfo`) as a millimetre value - raw `40` means 40 mm / 4 cm, not 40 cm (a mower obviously doesn't cut at 40 cm). Several users had hand-rolled a template sensor for this and mislabelled the unit as `cm`, so Home Assistant rendered a wrong "40,0 cm". The bridge now auto-discovers `sensor.hookii_<SERIAL>_cutting_height` with `unit_of_measurement: mm` and `device_class: distance`, so it reads correctly out of the box (and HA can convert to cm in the UI if the user prefers). Adds one entity; no change to existing sensors.

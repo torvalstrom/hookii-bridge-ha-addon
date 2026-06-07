@@ -1,0 +1,54 @@
+name: Build & publish add-on images
+
+# Builds the add-ons into prebuilt multi-arch images and pushes them to the
+# GitHub Container Registry (GHCR). Each add-on's config.yaml carries an
+# `image:` key, so Home Assistant's Supervisor PULLS these images instead of
+# building them locally on the user's device - which is what was failing for
+# users on slow / ARM hardware ("update does not download / not possible to
+# update"). The image tag the Supervisor pulls is the `version:` from each
+# add-on's config.yaml, so bump that to ship a new build.
+#
+# Uses the official Home Assistant builder (classic action), which reads each
+# add-on's config.yaml (image/version/arch) + build.yaml (per-arch base image)
+# and pushes ghcr.io/torvalstrom/<arch>-<addon>:<version> (+ :latest).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hookii_bridge/**"
+      - "hookii_mower_map/**"
+      - ".github/workflows/build.yaml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.addon }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        addon: [hookii_bridge, hookii_mower_map]
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.addon }}
+        uses: home-assistant/builder@2025.11.0
+        with:
+          args: |
+            --all \
+            --target ${{ matrix.addon }} \
+            --docker-hub ghcr.io/${{ github.repository_owner }} \
+            --addon

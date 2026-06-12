@@ -1,0 +1,79 @@
+configuration:
+  hookii_email:
+    name: Hookii account email
+    description: >-
+      The email of the Hookii account the add-on logs in with. IMPORTANT: use a
+      SEPARATE Hookii account, not the one on your phone. Create a second account
+      in the Hookii app and share your mower(s) to it. If you reuse your normal
+      account, the app and the add-on will keep logging each other out every few
+      minutes.
+  hookii_password:
+    name: Hookii account password
+    description: The password for the Hookii account above.
+  mower_serials:
+    name: Mower serial number(s)
+    description: >-
+      The 16-character code that starts with HKX - printed under your mower and
+      shown in the Hookii app under device info. If you have more than one mower,
+      separate them with commas.
+  local_mqtt_host:
+    name: MQTT broker address
+    description: >-
+      Where your MQTT broker runs. Leave this as core-mosquitto if you use the
+      official Mosquitto add-on (the usual setup). Otherwise enter your broker's
+      IP address.
+  local_mqtt_port:
+    name: MQTT broker port
+    description: Almost always 1883. Only change it if your broker uses a different port.
+  local_mqtt_user:
+    name: MQTT username
+    description: >-
+      A username that can log in to your MQTT broker. With the official Mosquitto
+      add-on you can use any Home Assistant user (Settings - People - Users).
+  local_mqtt_pass:
+    name: MQTT password
+    description: The password for the MQTT username above.
+  hookii_env:
+    name: Which Hookii cloud
+    description: >-
+      Choose prod if your mower runs normal (stable) firmware and you use your
+      regular Hookii account - this is most people. Choose beta only if you have
+      switched your mower to the Beta firmware channel in the Hookii app (that
+      unlocks extra sensors).
+  enable_discovery:
+    name: Create entities automatically
+    description: >-
+      Leave this ON. It makes the mower's controls and sensors appear in Home
+      Assistant automatically, with no manual configuration.
+  discovery_prefix:
+    name: Discovery prefix (advanced)
+    description: >-
+      Leave as homeassistant unless you deliberately changed this in Home
+      Assistant's MQTT settings.
+  heartbeat_seconds:
+    name: Heartbeat interval (advanced)
+    description: >-
+      Leave at the default. This is how often the add-on pings Hookii's cloud to
+      keep the data flowing.
+  hookii_agent:
+    name: App fingerprint (advanced)
+    description: Leave blank. The add-on uses a known-good default.
+  hookii_rest_host:
+    name: REST endpoint override (advanced)
+    description: Leave blank. Only for power users who need a non-standard endpoint.
+  hookii_mqtt_host:
+    name: Cloud MQTT endpoint override (advanced)
+    description: Leave blank. Only for power users who need a non-standard endpoint.
+  hookii_mqtt_user:
+    name: Cloud MQTT username (advanced)
+    description: >-
+      Leave blank. The add-on already knows the correct value for both the beta
+      and production clouds.
+  hookii_mqtt_pass:
+    name: Cloud MQTT password (advanced)
+    description: >-
+      Leave blank. The add-on already ships the correct value for both the beta
+      and production clouds.
+  log_level:
+    name: Log detail
+    description: Leave at INFO. Use DEBUG only when troubleshooting.

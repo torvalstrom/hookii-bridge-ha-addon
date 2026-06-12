@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.0 (2026-06-12)
+
+**Friendlier setup for non-technical users.** Added a `translations/en.yaml` so the add-on Configuration screen now shows a plain-language name and help text for every field. The fields people get stuck on are now self-explanatory right in the UI: the dedicated-account requirement is spelled out on the email field, the serial-number field tells you where to find the code, beta-vs-prod explains which to pick, and every power-user field is clearly marked "(advanced) - leave blank". No behaviour change - purely a Home Assistant UI clarity improvement.
+
 ## 1.3.1 (2026-06-12)
 
 **Production cloud now works out of the box - no manual MQTT credential needed.** A production traffic capture (HOOKII_1.1.0 build 191 against `iot.hookii.com`) confirmed the cloud MQTT broker uses the same username (`hookii-iot`) in both environments but a **different shared password** per environment. The bridge now ships **both** passwords and selects the correct one automatically from `hookii_env`, so `hookii_env: prod` connects telemetry without any extra setup (1.3.0 required pasting the password in by hand; that step is gone).

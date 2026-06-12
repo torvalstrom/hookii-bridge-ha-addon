@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0 (2026-06-12)
+
+**Friendlier setup for non-technical users.** Added a `translations/en.yaml` so the add-on Configuration screen now shows a plain-language name and help text for every field (e.g. "Your mowers" with an example, instead of the raw `mowers` key). No behaviour change - purely makes the config screen self-explanatory in the Home Assistant UI.
+
 ## 1.0.8 (2026-06-07)
 
 **Now ships as a prebuilt multi-arch image from GitHub Container Registry - downloaded, not built on your device.** Same delivery change as Hookii Bridge 1.2.7: a GitHub Action builds `amd64` / `aarch64` / `armv7` images and pushes them to `ghcr.io/torvalstrom/<arch>-hookii-mower-map`, and `config.yaml` now has an `image:` key so the Supervisor pulls the image instead of building it locally. Fixes slow / failing updates on ARM hardware. No configuration change; code unchanged from 1.0.7.

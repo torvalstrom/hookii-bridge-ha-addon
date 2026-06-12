@@ -1,0 +1,51 @@
+configuration:
+  mowers:
+    name: Your mowers
+    description: >-
+      One entry per mower, written as label:serial. Separate several mowers with
+      a semicolon. The label is a short nickname you choose (e.g. "garden") and
+      becomes part of the map's web address. The serial is the 16-character code
+      that starts with HKX - it's printed under the mower and shown in the Hookii
+      app. You can optionally add a colour at the end. Example:
+      garden:HKX1EB100JD25010115:#22c55e
+  local_mqtt_host:
+    name: MQTT broker address
+    description: >-
+      Where your MQTT broker runs. Leave this as core-mosquitto if you use the
+      official Mosquitto add-on (the usual setup). Otherwise enter your broker's
+      IP address.
+  local_mqtt_port:
+    name: MQTT broker port
+    description: Almost always 1883. Only change it if your broker uses a different port.
+  local_mqtt_user:
+    name: MQTT username
+    description: >-
+      A username that can log in to your MQTT broker. You can reuse the same one
+      you set up for the Hookii Bridge add-on.
+  local_mqtt_pass:
+    name: MQTT password
+    description: The password for the MQTT username above.
+  topic_prefix:
+    name: MQTT topic prefix (advanced)
+    description: >-
+      Leave this as-is. Only change it if you customised the topic format on the
+      Hookii Bridge add-on.
+  trail_max:
+    name: Trail length
+    description: >-
+      How many recent positions to keep in the moving "trail" line behind the
+      mower. Higher means a longer trail. The default is fine for most yards.
+  rotate_deg:
+    name: Map rotation
+    description: >-
+      Rotate the whole map by this many degrees so it lines up with how you
+      picture your yard. Leave at 0 to start, then adjust if north looks wrong.
+  log_level:
+    name: Log detail
+    description: >-
+      How much the add-on writes to its log. Leave at INFO. Use DEBUG only if
+      you are troubleshooting.
+network:
+  8000/tcp: >-
+    Direct web access port (optional). Leave empty to use Home Assistant's
+    built-in Mower Map panel and iframe - most people don't need this.

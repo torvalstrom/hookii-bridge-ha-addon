@@ -1,5 +1,5 @@
 name: Hookii Mower Map
-version: "1.0.8"
+version: "1.1.0"
 slug: hookii_mower_map
 # Prebuilt multi-arch image published to GHCR by CI (.github/workflows/build.yaml).
 # With this key the Supervisor PULLS the image instead of building it locally on

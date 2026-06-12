@@ -251,6 +251,11 @@ def normalise_status(payload: dict) -> None:
     if ha_state is not None:
         status["ha_state"] = ha_state
         status["ha_is_charging"] = ha_is_charging
+    # robotStatus 6 = firmware OTA in progress. Observed live 2026-06-12 on the
+    # mower being upgraded (1.6.8.4 -> 1.6.9.0): rs stays 6, persistent, only on
+    # the flashing mower, and it is unmapped above. Surface it so HA can show
+    # "firmware upgrading" and disable all controls during the flash.
+    status["ha_upgrading"] = (rs == 6)
 
 
 def md5_upper(s: str) -> str:
@@ -732,6 +737,16 @@ def publish_discovery(local: mqtt.Client, cfg: Config, serial: str) -> None:
     state_topic = cfg.local_topic_fmt.format(serial=serial)
     device = _device_descriptor(serial)
 
+    # Availability gate for COMMAND entities only (buttons + lawn_mower). The
+    # bridge publishes "offline" here while the mower is mid-firmware-upgrade
+    # (robotStatus 6) so HA disables the controls. Telemetry sensors below are
+    # deliberately NOT gated - they stay readable so you can watch the upgrade.
+    availability = {
+        "availability_topic": f"hookii/availability/{serial}",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+    }
+
     def _publish(component: str, object_id: str, body: dict) -> None:
         topic = f"{prefix}/{component}/hookii_{serial}/{object_id}/config"
         local.publish(topic, json.dumps(body), qos=1, retain=True)
@@ -761,6 +776,7 @@ def publish_discovery(local: mqtt.Client, cfg: Config, serial: str) -> None:
             "payload_press": "{}",
             "icon": icon,
             "device": device,
+            **availability,
         })
 
     # 1b. MQTT camera entity backed by hookii/snapshot/<serial>. The "Camera
@@ -792,6 +808,7 @@ def publish_discovery(local: mqtt.Client, cfg: Config, serial: str) -> None:
         "pause_command_topic": cfg.cmd_topic_fmt.format(serial=serial, action="pause"),
         "dock_command_topic": cfg.cmd_topic_fmt.format(serial=serial, action="return"),
         "device": device,
+        **availability,
     })
 
     # 3. Sensors - the canonical out-of-box telemetry set. Users with custom
@@ -818,6 +835,9 @@ def publish_discovery(local: mqtt.Client, cfg: Config, serial: str) -> None:
         ("longitude",    "Longitude",          "longitude",             "°",   None,          None,          "mdi:longitude",     "float"),
         ("work_status",  "Work status",        "workStatus",            None,  None,          None,          "mdi:robot-mower",   "int"),
         ("ha_state",     "State",              "ha_state",              None,  None,          None,          "mdi:robot-mower-outline", "str"),
+        # Firmware version (the `version` field). Not gated by availability, so
+        # you can watch it change when an OTA completes.
+        ("firmware",     "Firmware version",   "version",               None,  None,          None,          "mdi:chip",          "str"),
     ]
     for obj, name, field_, unit, dc, sc, icon, vt in sensors:
         body = {
@@ -837,7 +857,27 @@ def publish_discovery(local: mqtt.Client, cfg: Config, serial: str) -> None:
             body["icon"] = icon
         _publish("sensor", obj, body)
 
-    LOG.info("discovery: published %d entities for %s", 7 + 1 + 1 + len(sensors), serial)
+    # Firmware-upgrade indicator (binary_sensor). ON while robotStatus==6
+    # (ha_upgrading). Not availability-gated so it stays visible during the OTA;
+    # device_class "running" gives a fitting on/off semantic.
+    _publish("binary_sensor", "upgrading", {
+        "name": "Firmware upgrading",
+        "unique_id": f"hookii_{serial}_upgrading",
+        "state_topic": state_topic,
+        "value_template": (
+            "{% if value_json is mapping and value_json.msgType == 'STATUS' "
+            "and value_json.data.STATUS.ha_upgrading is defined %}"
+            "{{ 'ON' if value_json.data.STATUS.ha_upgrading else 'OFF' }}"
+            "{% else %}{{ this.state }}{% endif %}"
+        ),
+        "payload_on": "ON",
+        "payload_off": "OFF",
+        "device_class": "running",
+        "icon": "mdi:cog-sync",
+        "device": device,
+    })
+
+    LOG.info("discovery: published %d entities for %s", 7 + 1 + 1 + len(sensors) + 1, serial)
 
 
 # ---------------------------------------------------------------------------
@@ -871,6 +911,10 @@ class AccountClient:
         # Per-serial model code learned from observed STATUS topics. Default
         # to cfg.model until we see the first push for that serial.
         self._serial_model: dict[str, str] = {sn: self.cfg.model for sn in self.acct.serials}
+        # Per-mower firmware-upgrade flag (robotStatus 6). Set from inbound
+        # STATUS; commands are dropped while True so nothing interferes with a
+        # flash - even commands from automations/n8n, not just the HA buttons.
+        self._upgrading: dict[str, bool] = {}
 
     # ---- MQTT lifecycle ------------------------------------------------
 
@@ -969,6 +1013,23 @@ class AccountClient:
             if msg_type == "STATUS":
                 normalise_status(payload)
                 payload_out = json.dumps(payload).encode("utf-8")
+                # Firmware-upgrade gate: during OTA (robotStatus 6) publish an
+                # availability "offline" so HA marks the command buttons +
+                # lawn_mower unavailable, so a stray press can't interfere with
+                # the flash. Back "online" as soon as the mower leaves rs=6.
+                try:
+                    upgrading = bool(
+                        payload.get("data", {}).get("STATUS", {}).get("ha_upgrading")
+                    )
+                    self._upgrading[serial] = upgrading
+                    self.local.publish(
+                        f"hookii/availability/{serial}",
+                        "offline" if upgrading else "online",
+                        qos=1, retain=True,
+                    )
+                except Exception:
+                    LOG.debug("[%s] availability publish failed for %s",
+                              self.acct.label, serial)
             else:
                 payload_out = payload_raw
             # Republish to local broker on the legacy topic so HA template
@@ -998,6 +1059,14 @@ class AccountClient:
         by writing an active schedule for "now".
         """
         model = self._serial_model.get(serial, self.cfg.model)
+        # Refuse ALL commands while the mower is mid-firmware-upgrade (the HA
+        # buttons are already disabled via availability, but an automation or
+        # n8n could still publish here). A stray command during a flash is
+        # exactly what we want to prevent.
+        if self._upgrading.get(serial):
+            LOG.warning("[%s] DROPPING cmd %s for %s - firmware upgrade in progress",
+                        self.acct.label, action, serial)
+            return
         LOG.info("[%s] cmd %s serial=%s payload-keys=%s",
                  self.acct.label, action, serial, list(payload.keys()))
         try:

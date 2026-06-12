@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0 (2026-06-12)
+
+**Production-cloud MQTT credential override.** The first real `hookii_env: prod` test surfaced that the production MQTT broker (`iot.hookii.com:8883`) uses a **different shared credential** than the beta broker - so the bridge's built-in (beta) credential is rejected on prod with `cloud-mqtt connect failed rc=Bad user name or password`. REST login, the device list and the command channel all work on prod; only the telemetry MQTT connection was failing.
+
+Two new optional options expose the broker login so prod users can supply the production credential:
+
+- `hookii_mqtt_user` - cloud MQTT broker username. Blank on beta (the bridge ships the beta broker's shared credential); **required on prod**.
+- `hookii_mqtt_pass` - the paired password. Set both together for `hookii_env: prod`.
+
+For Container / k3s / docker users (no Supervisor) the same is controlled by the existing `HOOKII_MQTT_USER` / `HOOKII_MQTT_PASS` env vars. DOCS gained an options-table entry, a "Beta vs Production cloud" credential note, and a `Bad user name or password` troubleshooting entry. No change to beta behaviour - beta users need not set anything.
+
 ## 1.2.9 (2026-06-12)
 
 **Production-cloud support: the bridge can now run against Hookii's PRODUCTION cloud (`iot.hookii.com`), not just the beta backend.** Until now the bridge only ever connected to `iot.beta.hookii.com`, so mowers on stable firmware / a production Hookii account were out of luck. A new `hookii_env` option selects the backend:

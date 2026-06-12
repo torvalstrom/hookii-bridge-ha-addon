@@ -34,6 +34,9 @@ if [ -n "${SUPERVISOR_TOKEN:-}" ] && command -v bashio >/dev/null 2>&1; then
   HOOKII_ENV=$(bashio::config 'hookii_env')
   HOOKII_REST_HOST_OPT=$(bashio::config 'hookii_rest_host')
   HOOKII_MQTT_HOST_OPT=$(bashio::config 'hookii_mqtt_host')
+  # Cloud MQTT broker creds (prod broker needs a different static pair than beta).
+  HOOKII_MQTT_USER_OPT=$(bashio::config 'hookii_mqtt_user')
+  HOOKII_MQTT_PASS_OPT=$(bashio::config 'hookii_mqtt_pass')
 
   if [ -z "${HOOKII_EMAIL}" ] || [ -z "${HOOKII_PASSWORD}" ]; then
     echo "FATAL: hookii_email and hookii_password are required - configure the add-on first." >&2
@@ -96,6 +99,16 @@ if [ -n "${HOOKII_REST_HOST_OPT:-}" ]; then
 fi
 if [ -n "${HOOKII_MQTT_HOST_OPT:-}" ]; then
   export HOOKII_MQTT_HOST="${HOOKII_MQTT_HOST_OPT}"
+fi
+# Cloud MQTT broker credential overrides. bridge.py reads HOOKII_MQTT_USER /
+# HOOKII_MQTT_PASS (defaulting to the beta broker's static pair). Set both when
+# pointing at the prod broker, which rejects the beta pair ("Bad user name or
+# password"). Only export when non-empty so beta users keep the working default.
+if [ -n "${HOOKII_MQTT_USER_OPT:-}" ]; then
+  export HOOKII_MQTT_USER="${HOOKII_MQTT_USER_OPT}"
+fi
+if [ -n "${HOOKII_MQTT_PASS_OPT:-}" ]; then
+  export HOOKII_MQTT_PASS="${HOOKII_MQTT_PASS_OPT}"
 fi
 
 # Legacy local topic shape - existing HA template sensors, n8n flows and

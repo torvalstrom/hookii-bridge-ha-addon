@@ -339,6 +339,20 @@ def parse_config() -> Config:
     default_host = "iot.hookii.com" if env == "prod" else "iot.beta.hookii.com"
     rest = os.environ.get("HOOKII_REST_HOST", f"{default_host}:10443").split(":")
     cloud = os.environ.get("HOOKII_MQTT_HOST", f"{default_host}:8883").split(":")
+    # The cloud MQTT broker uses a shared static credential baked into the Hookii
+    # app. The username is `hookii-iot` in BOTH environments, but the PASSWORD
+    # rotates per environment (verified against a 2026-06-12 production capture of
+    # HOOKII_1.1.0 build 191). Per-user authorization is still enforced via the
+    # JWT embedded in heartbeats, NOT at the MQTT-auth layer, so the shared
+    # password is the same for all users of a given environment. Derive it from
+    # the env preset so `HOOKII_ENV=prod` just works; an explicit HOOKII_MQTT_PASS
+    # always overrides (e.g. if Hookii ever rotates it). The prod password contains
+    # `#` and `&` - it is a Python string literal here and is passed verbatim to
+    # paho's username_pw_set (no shell / URL-encoding), exactly as required.
+    default_mqtt_pass = (
+        "CaV4C4qHBQxwWI#GomA2zuI&D#MxyaMF" if env == "prod"
+        else "ukLWdAbvRF3JVqNyTdAVJsMx"
+    )
     LOG.info("hookii server env=%s -> rest=%s mqtt=%s", env, ":".join(rest), ":".join(cloud))
 
     return Config(
@@ -348,7 +362,7 @@ def parse_config() -> Config:
         cloud_host=cloud[0],
         cloud_port=int(cloud[1]),
         cloud_user=os.environ.get("HOOKII_MQTT_USER", "hookii-iot"),
-        cloud_pass=os.environ.get("HOOKII_MQTT_PASS", "ukLWdAbvRF3JVqNyTdAVJsMx"),
+        cloud_pass=os.environ.get("HOOKII_MQTT_PASS", default_mqtt_pass),
         model=os.environ.get("HOOKII_MODEL", "0002"),
         local_host=os.environ.get("LOCAL_MQTT_HOST", "127.0.0.1"),
         local_port=int(os.environ.get("LOCAL_MQTT_PORT", "1883")),

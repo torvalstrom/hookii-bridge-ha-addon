@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1 (2026-06-12)
+
+**Production cloud now works out of the box - no manual MQTT credential needed.** A production traffic capture (HOOKII_1.1.0 build 191 against `iot.hookii.com`) confirmed the cloud MQTT broker uses the same username (`hookii-iot`) in both environments but a **different shared password** per environment. The bridge now ships **both** passwords and selects the correct one automatically from `hookii_env`, so `hookii_env: prod` connects telemetry without any extra setup (1.3.0 required pasting the password in by hand; that step is gone).
+
+The `hookii_mqtt_user` / `hookii_mqtt_pass` options remain only as a manual override for the rare case where Hookii rotates the shared credential before a new add-on release ships the new value. DOCS, the options table and the `Bad user name or password` troubleshooting entry were updated to reflect the automatic behaviour.
+
+The capture also confirmed the rest of the protocol is identical between environments (REST paths/ports, command codes, topic structure, STATUS schema, JWT-in-heartbeat authorization, modelCode `0002`) - only the hostname, the MQTT password and the app build number differ. Multi-mower was already handled (the required `mower_serials` field is comma-separated and the bridge builds one entity set per serial).
+
 ## 1.3.0 (2026-06-12)
 
 **Production-cloud MQTT credential override.** The first real `hookii_env: prod` test surfaced that the production MQTT broker (`iot.hookii.com:8883`) uses a **different shared credential** than the beta broker - so the bridge's built-in (beta) credential is rejected on prod with `cloud-mqtt connect failed rc=Bad user name or password`. REST login, the device list and the command channel all work on prod; only the telemetry MQTT connection was failing.

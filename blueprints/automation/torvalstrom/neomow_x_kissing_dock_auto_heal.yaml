@@ -199,7 +199,7 @@ condition:
           - condition: template
             value_template: >-
               {% set ec = (state_attr(error_binary_sensor, 'notice') or {}).get('errCode') %}
-              {{ ec in auto_heal_codes }}
+              {{ (ec | string) in auto_heal_codes }}
       - condition: and
         conditions:
           - condition: numeric_state
@@ -215,7 +215,7 @@ action:
       ec: >-
         {{ (state_attr(error_binary_sensor, 'notice') or {}).get('errCode') }}
       cmd: >-
-        {%- if ec in auto_heal_codes -%}
+        {%- if (ec | string) in auto_heal_codes -%}
         recover_alarm
         {%- else -%}
         recharge
@@ -238,7 +238,7 @@ action:
             data:
               title: "Neomow {{ serial_number }} auto-healed"
               message: >-
-                {%- if ec in auto_heal_codes -%}
+                {%- if (ec | string) in auto_heal_codes -%}
                 Cleared alarm via recover_alarm at {{ now().strftime('%H:%M') }}
                 (errCode {{ ec }}).
                 {%- else -%}

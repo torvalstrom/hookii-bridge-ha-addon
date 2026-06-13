@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.0-beta3 (2026-06-13)
+
+**Adds the missing `Error` binary_sensor that the auto-heal docking blueprint requires.** The "Neomow X - Auto-heal failed docking" blueprint asks you to pick an *error binary sensor*, but the bridge never actually published one - only the `Firmware upgrading` binary_sensor existed, so the dropdown had nothing usable to select. The bridge now publishes a per-mower **`binary_sensor.hookii_<serial>_error`**:
+
+- Turns **on** when the cloud raises a `NOTICE_ALARM` (docking failure `514`/`515`, obstacle `116`, etc.), and exposes the code as the `notice.errCode` attribute the blueprint reads.
+- **Self-clears** as soon as the mower is clearly OK again (drawing charge at the dock, or actively mowing), with a 30-minute safety timeout - so it can never get stuck `on`.
+- Backed by a dedicated retained topic (`hookii/alarm/<serial>`) and seeded `off` at startup, so the entity is available immediately rather than `unknown`.
+
+Also fixed a type bug in the auto-heal blueprint: it compared the (integer) `errCode` against a list of string codes, so `recover_alarm` would never have fired. Update the blueprint from the repo if you imported it earlier.
+
+> The first time a real alarm fires, the bridge logs the raw `NOTICE_ALARM` body (truncated) so the exact cloud schema is captured; the code extractor is defensive (falls back to any `*code*` field) but this lets us tighten it if a firmware revision moves the field.
+
 ## 1.5.0-beta2 (2026-06-13)
 
 **Fixes the Mower Map panel showing raw JSON / a blank map.** Two bugs in the bundled map (from beta1) are fixed:

@@ -902,7 +902,33 @@ def publish_discovery(local: mqtt.Client, cfg: Config, serial: str) -> None:
         "device": device,
     })
 
-    LOG.info("discovery: published %d entities for %s", 7 + 1 + 1 + len(sensors) + 1, serial)
+    # Error / alarm indicator (binary_sensor). ON while the cloud reports an
+    # active NOTICE_ALARM (docking failure 514/515, obstacle 116, etc.). Fed by
+    # the bridge over a dedicated retained topic (hookii/alarm/<serial>) rather
+    # than templated off the raw STATUS stream, because that stream interleaves
+    # msgTypes - a clean single-purpose topic makes the state reliable. The
+    # `notice.errCode` attribute is what the auto-heal blueprint reads to choose
+    # recover_alarm vs recharge.
+    alarm_topic = f"hookii/alarm/{serial}"
+    _publish("binary_sensor", "error", {
+        "name": "Error",
+        "unique_id": f"hookii_{serial}_error",
+        "state_topic": alarm_topic,
+        "value_template": "{{ 'ON' if value_json.active else 'OFF' }}",
+        "payload_on": "ON",
+        "payload_off": "OFF",
+        "device_class": "problem",
+        "json_attributes_topic": alarm_topic,
+        "json_attributes_template": "{{ {'notice': {'errCode': value_json.errCode}} | tojson }}",
+        "icon": "mdi:alert-circle",
+        "device": device,
+    })
+    # Seed an initial retained OFF so the entity is immediately available (never
+    # 'unknown') before the first real alarm/clear event arrives.
+    local.publish(alarm_topic, json.dumps({"active": False, "errCode": None}),
+                  qos=1, retain=True)
+
+    LOG.info("discovery: published %d entities for %s", 7 + 1 + 1 + len(sensors) + 2, serial)
 
 
 # ---------------------------------------------------------------------------
@@ -940,6 +966,11 @@ class AccountClient:
         # STATUS; commands are dropped while True so nothing interferes with a
         # flash - even commands from automations/n8n, not just the HA buttons.
         self._upgrading: dict[str, bool] = {}
+        # Per-mower alarm/error state, fed to the `error` binary_sensor over a
+        # dedicated retained topic (hookii/alarm/<serial>). Raised from inbound
+        # NOTICE_ALARM messages, self-cleared from STATUS (see _update_alarm).
+        # Shape: {"active": bool, "errCode": int|None, "raised_at": float}.
+        self._alarm: dict[str, dict] = {}
 
     # ---- MQTT lifecycle ------------------------------------------------
 
@@ -1038,14 +1069,13 @@ class AccountClient:
             if msg_type == "STATUS":
                 normalise_status(payload)
                 payload_out = json.dumps(payload).encode("utf-8")
+                st = payload.get("data", {}).get("STATUS", {})
                 # Firmware-upgrade gate: during OTA (robotStatus 6) publish an
                 # availability "offline" so HA marks the command buttons +
                 # lawn_mower unavailable, so a stray press can't interfere with
                 # the flash. Back "online" as soon as the mower leaves rs=6.
                 try:
-                    upgrading = bool(
-                        payload.get("data", {}).get("STATUS", {}).get("ha_upgrading")
-                    )
+                    upgrading = bool(st.get("ha_upgrading"))
                     self._upgrading[serial] = upgrading
                     self.local.publish(
                         f"hookii/availability/{serial}",
@@ -1055,6 +1085,26 @@ class AccountClient:
                 except Exception:
                     LOG.debug("[%s] availability publish failed for %s",
                               self.acct.label, serial)
+                # Self-clear a docking alarm once the mower is clearly OK again:
+                # drawing charge (successfully docked) or actively mowing. Also
+                # time-bound it (30 min) so a missed clear-event can never pin
+                # the error sensor ON - safe regardless of the NOTICE_ALARM
+                # clear-event schema.
+                cur = self._alarm.get(serial)
+                if cur and cur.get("active"):
+                    if st.get("ha_is_charging") or st.get("ha_state") == "mowing":
+                        self._update_alarm(serial, clear=True)
+                    elif time.time() - cur.get("raised_at", 0) > 1800:
+                        self._update_alarm(serial, clear=True)
+            elif msg_type == "NOTICE_ALARM":
+                # Surface the device alarm to the `error` binary_sensor. Log the
+                # raw body (truncated) so the exact schema is captured the first
+                # time a real alarm fires (the extractor below is best-effort).
+                body = (payload.get("data") or {}).get("NOTICE_ALARM", payload)
+                LOG.info("[%s] NOTICE_ALARM for %s: %s", self.acct.label, serial,
+                         json.dumps(body)[:600])
+                self._update_alarm(serial, err_code=self._extract_err_code(payload))
+                payload_out = payload_raw
             else:
                 payload_out = payload_raw
             # Republish to local broker on the legacy topic so HA template
@@ -1071,6 +1121,56 @@ class AccountClient:
             self.local.publish(local_topic, payload_out, qos=0, retain=True)
         except Exception:
             LOG.exception("[%s] error processing inbound msg", self.acct.label)
+
+    @staticmethod
+    def _extract_err_code(payload: dict):
+        """Best-effort pull of the errCode from a NOTICE_ALARM payload.
+
+        The cloud nests message bodies under data.<msgType> (confirmed for
+        STATUS and ALL_PATH_INDEX_V2); `errCode` is the documented field name
+        for docking failures (514/515) and friends. If a schema shift moves or
+        renames it, fall back to the first int-valued key whose name contains
+        'code' so the sensor still raises rather than silently going blind.
+        Returns an int code, or None if nothing alarm-like is present.
+        """
+        na = (payload.get("data") or {}).get("NOTICE_ALARM")
+        if not isinstance(na, dict):
+            na = payload if isinstance(payload, dict) else {}
+        code = na.get("errCode")
+        if code is None:
+            for k, v in na.items():
+                if isinstance(v, int) and "code" in k.lower():
+                    code = v
+                    break
+        try:
+            return int(code) if code is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _update_alarm(self, serial: str, *, err_code=None, clear: bool = False) -> None:
+        """Maintain + publish per-mower alarm state on hookii/alarm/<serial>.
+
+        Raised by NOTICE_ALARM (err_code truthy), cleared either explicitly
+        (clear=True, from a STATUS showing the mower charging/mowing again or a
+        30-min timeout) or by a NOTICE_ALARM carrying errCode 0/None. Retained
+        so the `error` binary_sensor recovers across restarts. Publishes only on
+        a real transition to avoid churning the retained topic.
+        """
+        prev = self._alarm.get(serial, {"active": False, "errCode": None})
+        if clear or not err_code:
+            new = {"active": False, "errCode": None}
+        else:
+            new = {"active": True, "errCode": err_code, "raised_at": time.time()}
+        if new["active"] == prev.get("active") and new.get("errCode") == prev.get("errCode"):
+            return
+        self._alarm[serial] = new
+        self.local.publish(
+            f"hookii/alarm/{serial}",
+            json.dumps({"active": new["active"], "errCode": new.get("errCode")}),
+            qos=1, retain=True,
+        )
+        LOG.info("[%s] alarm %s for %s (errCode=%s)", self.acct.label,
+                 "RAISED" if new["active"] else "cleared", serial, new.get("errCode"))
 
     # ---- Local command execution --------------------------------------
 

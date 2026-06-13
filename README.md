@@ -47,7 +47,7 @@ Each mower's URL slug (its "label") is its **serial in lower-case** — e.g. ser
 
 ### Put it on a dashboard (optional)
 
-To embed the map in a Lovelace iframe card instead of (or as well as) the sidebar:
+To embed the map in a Lovelace **iframe** card (auto-refreshing, the recommended option):
 
 ```yaml
 type: iframe
@@ -55,7 +55,29 @@ url: /hassio/ingress/hookii_bridge/page/hkx1eb100jd25010115
 aspect_ratio: 100%
 ```
 
-Use the lower-cased serial as the slug. For a side-by-side grid of every configured mower in a single card, point the URL at `/all` instead (`/hassio/ingress/hookii_bridge/all`).
+For a **picture** card instead (a single static SVG snapshot — picture cards can't run the JavaScript that drives `/page`):
+
+```yaml
+type: picture
+image: /hassio/ingress/hookii_bridge/embed/hkx1eb100jd25010115
+```
+
+Use the lower-cased serial as the slug. For a side-by-side grid of every configured mower in a single card, point the iframe URL at `/all` instead (`/hassio/ingress/hookii_bridge/all`).
+
+### As a Lovelace tile that re-fetches on mower state changes
+
+For a map tile that sits alongside your other mower sensors (and works in `picture-glance` / `picture-elements` cards with state badges on top), use a `picture-entity` card bound to one of the mower's sensors — HA re-renders the card and re-fetches the SVG every time that sensor's state changes:
+
+```yaml
+type: picture-entity
+entity: sensor.hookii_hkx1eb100jd25010115_ha_state
+name: Mower Map
+image: /hassio/ingress/hookii_bridge/embed/hkx1eb100jd25010115
+show_name: false
+show_state: true
+```
+
+Swap `entity:` to `sensor.hookii_<slug>_latitude` for finer-grained refresh while the mower is moving. This is state-driven (no refresh while parked); for a continuous 10-second cadence use the iframe above. Full recipe + sensor-choice table is in [`hookii_bridge/DOCS.md`](hookii_bridge/DOCS.md).
 
 The map starts blank and switches to a rendered yard as soon as the bridge republishes the first `STATUS` payload (usually within seconds). Boundary polygons appear when the cloud first streams `DEVICE_MAP_V2`, which can take minutes to hours after the mower comes online; live position and trail render immediately.
 
@@ -357,8 +379,9 @@ is to set the `MOWERS` env var on the **bridge** service and publish port `8000`
       - MOWERS=garden:HKX1EB100JD25010115:#22c55e;pond:HKX2EB100JD24080170:#3b82f6
 ```
 
-The map is then at `http://<host>:8000/` (all-mowers grid) or
-`http://<host>:8000/page/<label>`.
+The map is then at `http://<host>:8000/` (all-mowers grid),
+`http://<host>:8000/page/<label>` (iframe card) or
+`http://<host>:8000/embed/<label>` (picture card — bare SVG, no JS).
 
 <details>
 <summary>Legacy: running the map as a separate container</summary>

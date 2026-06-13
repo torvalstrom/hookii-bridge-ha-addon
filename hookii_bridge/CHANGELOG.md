@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0-beta4 (2026-06-13)
+
+**Adds a dedicated `/embed` path for embedding the mower SVG in HA dashboards.** The existing `/svg/<label>` route works for the in-panel JS refresh wrapper but is unusable inside HA `picture` / `picture-entity` cards: the SVG is emitted with `width="100%" height="100%"`, which stretches correctly inside a sized parent but collapses to 0×0 inside an `<img src="…">` tag (HA cards render image URLs that way), and the `Cache-Control: no-store` header blocks the conditional 304 re-fetch HA uses when an entity state changes. The new endpoint fixes both:
+
+- **`GET /embed/<label>`** - the mower SVG with absolute pixel width/height (viewBox dims) and `Cache-Control: no-cache, must-revalidate`. Drop the URL into a `picture` / `picture-entity` card's `image:` field and the map will render.
+- **`GET /embed`** (no label) - convenience for single-mower installs, returns the only configured mower directly. Returns 400 with the list of labels if you have more than one.
+
+`/svg/<label>` is unchanged so the sidebar panel and any existing iframe setups keep working. For auto-refresh, the `iframe` card with `/page/<label>` is still the most reliable option (HTML + JS); `/embed` is for cases where you need a bare SVG URL.
+
+> Via HA Ingress, the URL is `/api/hassio_ingress/<session-token>/embed/<label>`. The session token is the long hash you see in the browser URL bar when the Mower Map panel is open. For multi-user dashboards or external access, expose the add-on's host port (`8000/tcp`) and use `http://<ha-host>:8000/embed/<label>` directly.
+
 ## 1.5.0-beta3 (2026-06-13)
 
 **Adds the missing `Error` binary_sensor that the auto-heal docking blueprint requires.** The "Neomow X - Auto-heal failed docking" blueprint asks you to pick an *error binary sensor*, but the bridge never actually published one - only the `Firmware upgrading` binary_sensor existed, so the dropdown had nothing usable to select. The bridge now publishes a per-mower **`binary_sensor.hookii_<serial>_error`**:

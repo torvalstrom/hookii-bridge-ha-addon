@@ -142,6 +142,49 @@ If you already have Hookii Bridge installed, new releases show up automatically 
 
 **To read what changed between versions**: the [CHANGELOG](CHANGELOG.md) lists every release with its highlights, breaking changes and rationale.
 
+## The built-in Mower Map
+
+Since **v1.5.0** the live Mower Map is built into this add-on — there is **no
+separate add-on to install** and **nothing extra to configure**. It draws a live
+SVG view of each mower's yard: the boundary polygon (once the cloud streams it),
+the cut paths (thick green), transit paths (thin light green), the live trail in
+your colour, and the mower itself with a heading arrow. It refreshes every 10s.
+
+**How to open it:** when the add-on starts, Home Assistant adds a **Mower Map**
+entry to the left sidebar (the map is served over Home Assistant Ingress). Click
+it — you get a grid with one tile per mower. The map builds its mower list
+automatically from your `mower_serials` and reuses this add-on's MQTT settings,
+so it just works.
+
+**Mower URL slugs.** Each mower's slug (its "label") is its **serial in
+lower-case** — e.g. serial `HKX1EB100JD25010115` → slug `hkx1eb100jd25010115`.
+You only need this if you embed the map on a dashboard:
+
+```yaml
+type: iframe
+url: /hassio/ingress/hookii_bridge/page/hkx1eb100jd25010115   # one mower
+aspect_ratio: 100%
+```
+
+Use `/hassio/ingress/hookii_bridge/all` for the all-mowers grid (same as the
+sidebar panel). On the Container/k3s path (no Supervisor), the map is served
+directly at `http://<host>:8000/` when you set the `MOWERS` env var and publish
+port 8000 — see the repo README's Container path.
+
+**Display options** (both optional, in the add-on Configuration):
+
+| Option | Default | What it does |
+|---|---|---|
+| `map_trail_max` | `2000` | Maximum number of live-position points kept in the trail before the oldest are dropped. Higher = longer visible trail, slightly more memory. |
+| `map_rotate_deg` | `0` | Rotate the whole map by this many degrees (`-360`..`360`) so your yard's orientation matches how you think of it. |
+
+**If the map is blank or shows text instead of a picture:** make sure you are on
+**v1.5.0-beta2 or newer** (beta1 had a bug where the panel showed raw JSON and
+the tiles couldn't load). The map also starts blank until the bridge republishes
+the first `STATUS` payload (usually seconds); boundary polygons can take minutes
+to hours after the mower first comes online, while the live position and trail
+appear right away.
+
 ## Sending commands
 
 The add-on subscribes to `hookii/cmd/<serial>/<action>` and translates each publish into a REST call against `iot.beta.hookii.com`. The five buttons published via Discovery already wire up the common actions; if you'd rather call them from automations or scripts, the topics are:

@@ -111,29 +111,41 @@ If nothing appears, see **"It's not working"** at the bottom.
 
 ---
 
-## 6. (Optional) Add the live Mower Map
+## 6. The live Mower Map (built in)
 
 The Mower Map draws a live picture of your yard — the boundary, where the mower
 has cut, and its current position.
 
-1. In the **Add-on Store**, open **Hookii Mower Map** → **Install**.
-2. **Configuration** tab → set **Your mowers** to `nickname:serial`, e.g.
-   `garden:HKX1EB100JD25010115`. Use the same MQTT username/password as the
-   bridge. **Save → Start**.
-3. The map shows up as a panel in the left sidebar. To put it on a dashboard
-   instead: edit a dashboard → **+ Add Card → Manual**, and paste:
+**Since v1.5.0 the map is built into this add-on — there is nothing extra to
+install.** It automatically uses the **Mower serials** you set in step 4, so it
+just works once the bridge is running.
 
-   ```yaml
-   type: iframe
-   url: /hassio/ingress/hookii_mower_map/page/garden
-   aspect_ratio: 100%
-   ```
+1. Open the **Mower Map** entry in the left sidebar (Home Assistant adds it
+   automatically when the add-on starts).
+2. That's it — the grid shows one tile per mower.
 
-   Replace `garden` with the nickname you chose.
+To put the map on a dashboard instead of (or as well as) the sidebar: edit a
+dashboard → **+ Add Card → Manual**, and paste:
 
-The map starts at "Waiting for data…" and fills in once the mower streams its
-first update. The yard **outline** can take a while to appear (the Hookii cloud
-only sends it occasionally) — the live position shows up right away.
+```yaml
+type: iframe
+url: /hassio/ingress/hookii_bridge/page/garden
+aspect_ratio: 100%
+```
+
+Replace `garden` with one of your mower nicknames. The bridge derives each
+nickname from the serial: it is the serial **lowercased** (e.g. serial
+`HKX1EB100JD25010115` → nickname `hkx1eb100jd25010115`). For the all-mowers
+grid use `url: /hassio/ingress/hookii_bridge/all`.
+
+The map starts blank and fills in once the mower streams its first update. The
+yard **outline** can take a while to appear (the Hookii cloud only sends it
+occasionally) — the live position shows up right away.
+
+> **Upgrading from the old separate "Hookii Mower Map" add-on?** You can
+> **uninstall** it — its job is now done by the bridge. Any dashboard iframe
+> cards that pointed at `/hassio/ingress/hookii_mower_map/...` need their URL
+> changed to `/hassio/ingress/hookii_bridge/...` (note: `hookii_bridge`).
 
 ---
 
@@ -145,8 +157,8 @@ only sends it occasionally) — the live position shows up right away.
 | You keep getting logged out of the **Hookii app** | The bridge is sharing your main account | Use a separate account for the bridge (step 2) |
 | Log says it can't connect to MQTT | The broker address/username is wrong | Broker address is `core-mosquitto` for the official add-on; username/password is the `mqtt` user from step 1 |
 | Bridge runs but **no entities** in Home Assistant | The MQTT **integration** isn't set up in HA | Settings → Devices & Services → add/Configure **MQTT** against the same broker |
-| Map stuck on "Waiting for data…" | The bridge isn't running/publishing | Start the bridge first and confirm its Log shows `discovery: published…` |
+| Mower Map tile stays blank | The bridge hasn't published a position yet | Confirm the bridge Log shows `discovery: published…`; live position appears within seconds, the yard outline can take minutes-to-hours |
+| Mower Map panel shows text/JSON, not a picture | You're on the old v1.5.0-beta1 | Update the add-on to **v1.5.0-beta2 or newer**, then reload the panel |
 
-Still stuck? The full reference is in the
-[Hookii Bridge docs](hookii_bridge/DOCS.md) and the
-[Mower Map docs](hookii_mower_map/DOCS.md).
+Still stuck? The full reference (including the built-in Mower Map) is in the
+[Hookii Bridge docs](hookii_bridge/DOCS.md).

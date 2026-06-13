@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0-beta2 (2026-06-13)
+
+**Fixes the Mower Map panel showing raw JSON / a blank map.** Two bugs in the bundled map (from beta1) are fixed:
+
+- **Sidebar panel showed a JSON blob instead of the map.** The Home Assistant ingress panel opens the add-on's root URL (`/`), but that route returned a machine-readable JSON index. The root now serves the live all-mowers map grid (the JSON index moved to `/api`).
+- **Map tiles stayed blank inside the panel.** The map's in-page requests for each mower's SVG used absolute paths (`/svg/...`) that escape the Home Assistant ingress prefix and 404. The map now rebases every request onto the ingress path (via the `X-Ingress-Path` header), so the tiles render in the sidebar panel as well as on direct host:port access.
+
+No configuration change. If you were on beta1, just update to beta2 and reload the **Mower Map** panel.
+
 ## 1.5.0-beta1 (2026-06-12)
 
 **The Mower Map is now built into the Bridge - one add-on instead of two.** The live SVG yard view (formerly the separate "Hookii Mower Map" add-on) now runs inside this add-on and appears automatically as a **Mower Map** panel in the Home Assistant sidebar. Big simplification for setup:

@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 import paho.mqtt.client as mqtt
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 
 
@@ -812,8 +812,41 @@ def render_svg(label: str) -> str:
 app = FastAPI(title="Hookii Mower Map")
 
 
-@app.get("/")
-def root():
+def _ingress_base(request: Request) -> str:
+    # Home Assistant serves an ingress add-on under /api/hassio_ingress/<token>/
+    # and sets the X-Ingress-Path request header to that prefix so in-page URLs
+    # can be rebased. Absent on direct host:port access -> "" (plain /svg/.. ok).
+    return request.headers.get("X-Ingress-Path", "").rstrip("/")
+
+
+def _render_all(request: Request) -> HTMLResponse:
+    base = _ingress_base(request)
+    blocks = "".join(
+        f'<div class="mower" data-label="{label}">'
+        f'<h2>{label.upper()}</h2>'
+        f'<div class="map"></div>'
+        f'</div>'
+        for label in state
+    )
+    html = (
+        _ALL_HTML
+        .replace("__BASE__", base)
+        .replace("__BLOCKS__", blocks)
+        .replace("__LABELS_JSON__", json.dumps(list(state.keys())))
+    )
+    return HTMLResponse(html)
+
+
+@app.get("/", response_class=HTMLResponse)
+def root(request: Request):
+    # The HA ingress sidebar panel ("Mower Map") opens the add-on ROOT. Serve
+    # the all-mowers grid here so the panel shows the map, not a JSON blob.
+    return _render_all(request)
+
+
+@app.get("/api")
+def api_index():
+    # Machine-readable index (was previously served at "/").
     return {
         "mowers": [
             {"label": label, "serial": s["serial"], "color": s["color"]}
@@ -867,10 +900,14 @@ _PAGE_HTML = """<!doctype html>
   // We never throw away the previous frame until the new one has arrived,
   // and we cache-bust with a timestamp so any intermediate caches don't
   // serve stale frames.
+  // BASE is the HA ingress path prefix (e.g. /api/hassio_ingress/<token>) when
+  // shown in the sidebar panel, or "" on direct host:port access. Without it,
+  // an absolute '/svg/..' escapes the ingress prefix and 404s -> blank map.
+  const BASE = "__BASE__";
   const wrap = document.getElementById('wrap');
   async function tick() {
     try {
-      const r = await fetch('/svg/__LABEL__?t=' + Date.now(), { cache: 'no-store' });
+      const r = await fetch(BASE + '/svg/__LABEL__?t=' + Date.now(), { cache: 'no-store' });
       if (r.ok) {
         wrap.innerHTML = await r.text();
       }
@@ -895,10 +932,12 @@ _ALL_HTML = """<!doctype html>
 <div class="grid">__BLOCKS__</div>
 <script>
   // Same no-blink swap pattern as /page, applied per-mower in the grid.
+  // BASE rebases fetches onto the HA ingress prefix (see /page note).
+  const BASE = "__BASE__";
   const labels = __LABELS_JSON__;
   async function refreshOne(label) {
     try {
-      const r = await fetch('/svg/' + label + '?t=' + Date.now(), { cache: 'no-store' });
+      const r = await fetch(BASE + '/svg/' + label + '?t=' + Date.now(), { cache: 'no-store' });
       if (r.ok) {
         const el = document.querySelector('div[data-label="' + label + '"] .map');
         if (el) el.innerHTML = await r.text();
@@ -913,26 +952,16 @@ _ALL_HTML = """<!doctype html>
 
 
 @app.get("/page/{label}", response_class=HTMLResponse)
-def get_page(label: str):
+def get_page(label: str, request: Request):
     if label not in state:
         raise HTTPException(status_code=404, detail=f"unknown mower {label!r}")
-    return _PAGE_HTML.replace("__LABEL__", label)
+    base = _ingress_base(request)
+    return _PAGE_HTML.replace("__BASE__", base).replace("__LABEL__", label)
 
 
 @app.get("/all", response_class=HTMLResponse)
-def get_all():
-    blocks = "".join(
-        f'<div class="mower" data-label="{label}">'
-        f'<h2>{label.upper()}</h2>'
-        f'<div class="map"></div>'
-        f'</div>'
-        for label in state
-    )
-    return (
-        _ALL_HTML
-        .replace("__BLOCKS__", blocks)
-        .replace("__LABELS_JSON__", json.dumps(list(state.keys())))
-    )
+def get_all(request: Request):
+    return _render_all(request)
 
 
 # ---------------------------------------------------------------------------

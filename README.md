@@ -12,11 +12,11 @@
 > Hookii's server only keeps ONE active session per account. If the bridge and your phone app share the same account they will silently evict each other's sessions every few minutes, and you will be permanently logged out of the mobile app.
 > **Fix (5 minutes, no code):** create a second Hookii account, then from your primary account share each mower to it via the mobile app's Device Sharing menu. Configure the add-on with the new bridge account's credentials. See [DOCS.md](hookii_bridge/DOCS.md) for the full walk-through.
 
-This repository contains **two** Home Assistant add-ons:
+This repository ships the **Hookii Bridge** add-on:
 
-- **Hookii Bridge** ([`hookii_bridge/`](hookii_bridge/)) — a reverse-engineered Home Assistant integration for **Hookii Neomow** robot mowers. Two-way: it reads live telemetry AND sends control commands. Replaces the community workaround that broke when Hookii migrated their cloud in May 2026. The bridge is the workhorse you almost certainly want first.
+- **Hookii Bridge** ([`hookii_bridge/`](hookii_bridge/)) — a reverse-engineered Home Assistant integration for **Hookii Neomow** robot mowers. Two-way: it reads live telemetry AND sends control commands. Replaces the community workaround that broke when Hookii migrated their cloud in May 2026. **The live Mower Map is now built in** (since v1.5.0) and appears as a sidebar panel — see [The Mower Map](#the-mower-map--built-in-nothing-to-install) below.
 
-- **Hookii Mower Map** ([`hookii_mower_map/`](hookii_mower_map/)) — an optional companion visualizer that subscribes to the bridge's MQTT output and renders a live SVG yard view per mower (boundary polygon, cut/transit paths, live trail, robot position + heading). Designed to drop straight into a Lovelace iframe card. See [`hookii_mower_map/DOCS.md`](hookii_mower_map/DOCS.md) for setup.
+> The `hookii_mower_map/` directory is the **legacy standalone** Mower Map add-on, kept only for users who haven't migrated yet. New installs do not need it — the map is part of the bridge.
 
 ## What you actually get in Home Assistant
 
@@ -35,35 +35,33 @@ The add-on auto-publishes Home Assistant MQTT-Discovery configs, so as soon as i
 - 14 sensors per mower: battery percentage, blade RPM, voltage, charge current, four temperatures (battery / blade motor / left drive / right drive), WiFi signal, GPS satellite count, latitude, longitude, work status code, and a friendly "State" sensor ("mowing" / "returning" / "docked") derived from the mower's state machine.
 - The full raw `hookii/details/device/<serial>` STATUS payload is also republished, so any existing template sensors, automations, n8n flows or dashboards you wrote against the old community workaround keep working.
 
-## The Mower Map — get started in 3 steps
+## The Mower Map — built in, nothing to install
 
-The Mower Map is an optional companion add-on that renders a live SVG view of each mower's yard: the boundary polygon (when the cloud has streamed it), every cut path the mower has driven (thick green), every transit path it took without cutting (thin light green), the live trail in your chosen colour, and the mower itself with a heading arrow. Drop it into a Lovelace iframe card and you have a moving map of your yard updating every 10 seconds.
+**Since v1.5.0 the Mower Map is part of this add-on — there is no separate add-on to install.** It renders a live SVG view of each mower's yard: the boundary polygon (when the cloud has streamed it), every cut path the mower has driven (thick green), every transit path it took without cutting (thin light green), the live trail in your chosen colour, and the mower itself with a heading arrow. It updates every 10 seconds.
 
-### Quick start
+### How to open it
 
-1. **Install the Hookii Bridge add-on first.** The Mower Map is a pure consumer of the bridge's MQTT output — it does not talk to Hookii's cloud directly. Without the bridge running, the map sits at "Waiting for data..." forever.
+When the add-on starts, Home Assistant adds a **Mower Map** entry to the left sidebar (it is served over HA Ingress — `ingress: true`). Click it and you get a grid with one tile per mower. **Nothing extra to configure** — the map reuses this add-on's MQTT settings and builds its mower list automatically from the `mower_serials` you already set.
 
-2. **Install the Hookii Mower Map add-on** (same install path as the bridge, see below). Set the `mowers` option to a semicolon-separated list of `label:serial[:color]` entries — one per mower you want to see:
+Each mower's URL slug (its "label") is its **serial in lower-case** — e.g. serial `HKX1EB100JD25010115` → label `hkx1eb100jd25010115`.
 
-   ```yaml
-   mowers: "garden:HKX1EB100JD25010115:#22c55e;pond:HKX2EB100JD24080170:#3b82f6"
-   ```
+### Put it on a dashboard (optional)
 
-   Re-use the same broker credentials you configured for the bridge. The label is the URL slug you'll reference in step 3.
+To embed the map in a Lovelace iframe card instead of (or as well as) the sidebar:
 
-3. **Drop the map into a Lovelace iframe card:**
+```yaml
+type: iframe
+url: /hassio/ingress/hookii_bridge/page/hkx1eb100jd25010115
+aspect_ratio: 100%
+```
 
-   ```yaml
-   type: iframe
-   url: /hassio/ingress/hookii_mower_map/page/garden
-   aspect_ratio: 100%
-   ```
+Use the lower-cased serial as the slug. For a side-by-side grid of every configured mower in a single card, point the URL at `/all` instead (`/hassio/ingress/hookii_bridge/all`).
 
-   Replace `garden` with the label you set in step 2. For a side-by-side grid of every configured mower in a single card, point the URL at `/all` instead.
+The map starts blank and switches to a rendered yard as soon as the bridge republishes the first `STATUS` payload (usually within seconds). Boundary polygons appear when the cloud first streams `DEVICE_MAP_V2`, which can take minutes to hours after the mower comes online; live position and trail render immediately.
 
-That's all that's required to get a live view. The map will start at "Waiting for data..." and switch to a rendered yard as soon as the bridge republishes the first `STATUS` payload (usually within seconds). Boundary polygons appear when the cloud first streams `DEVICE_MAP_V2`, which can take minutes to hours after the mower comes online; live position and trail render immediately.
+> **Migrating from the old separate "Hookii Mower Map" add-on?** Uninstall it — its job is now done by the bridge. Change any Lovelace iframe URLs from `/hassio/ingress/hookii_mower_map/...` to `/hassio/ingress/hookii_bridge/...`.
 
-Full configuration reference, env-var-driven setup for Container/k3s users, and troubleshooting are in [`hookii_mower_map/DOCS.md`](hookii_mower_map/DOCS.md).
+Full configuration reference, env-var-driven setup for Container/k3s users, and troubleshooting are in [`hookii_bridge/DOCS.md`](hookii_bridge/DOCS.md).
 
 ## Commands & sensors reference (Hookii Bridge)
 
@@ -198,9 +196,8 @@ If you run **Home Assistant OS** or **Home Assistant Supervised** (the install m
    ```
 
 4. Click **Add → Close**
-5. Reload the Add-on store. **Hookii Bridge** and **Hookii Mower Map** both appear under "Neomow X Home Assistant Add-on".
-6. Click **Hookii Bridge** → **Install**, then follow the [Hookii Bridge setup guide](hookii_bridge/DOCS.md) — it walks through the Hookii account credentials, your mower serial number(s) and the Mosquitto broker settings the add-on needs.
-7. (Optional) Once the bridge is publishing, install **Hookii Mower Map** the same way and follow the [Mower Map setup guide](hookii_mower_map/DOCS.md). It re-uses the same broker config and just needs your mower serials.
+5. Reload the Add-on store. **Hookii Bridge** appears under "Neomow X Home Assistant Add-on".
+6. Click **Hookii Bridge** → **Install**, then follow the [Hookii Bridge setup guide](hookii_bridge/DOCS.md) — it walks through the Hookii account credentials, your mower serial number(s) and the Mosquitto broker settings the add-on needs. The **Mower Map** appears automatically as a sidebar panel once the add-on starts — no separate install.
 
 To check which install method you have: **Settings → About → Installation method**. If it says "Home Assistant Container" or "Home Assistant Core", the Add-on Store is not available — use install path B instead.
 
@@ -342,9 +339,32 @@ docker stop hookii-bridge && docker rm hookii-bridge
 
 Pin to a specific release by using `:1.2.7` instead of `:latest` (and bump it when you want to move). If you build from source instead, swap the pull for `docker compose build --no-cache --pull hookii-bridge` (compose) or `docker build --no-cache --pull -t hookii-bridge:latest https://github.com/torvalstrom/hookii-bridge-ha-addon.git#main` (plain docker), appending `#v1.2.7` to pin.
 
-### 6. (Optional) Adding the Mower Map alongside the bridge
+### 6. (Optional) The Mower Map on the Container path
 
-If you want the live SVG yard view too, add a second service to the same compose file:
+**The bridge image already contains the Mower Map.** The simplest way to get it
+is to set the `MOWERS` env var on the **bridge** service and publish port `8000`
+— `run.sh` then launches the map alongside the bridge in the same container
+(a map crash can never take the bridge down):
+
+```yaml
+  hookii-bridge:
+    # ... your existing bridge config ...
+    ports:
+      - "8000:8000"                       # Mower Map web UI
+    environment:
+      # ... existing bridge env ...
+      # Format: label:serial[:color];label:serial[:color];...
+      - MOWERS=garden:HKX1EB100JD25010115:#22c55e;pond:HKX2EB100JD24080170:#3b82f6
+```
+
+The map is then at `http://<host>:8000/` (all-mowers grid) or
+`http://<host>:8000/page/<label>`.
+
+<details>
+<summary>Legacy: running the map as a separate container</summary>
+
+This was the pre-v1.5.0 layout (a standalone `hookii-mower-map` image). It still
+works but is no longer necessary — prefer the bundled map above.
 
 ```yaml
   hookii-mower-map:
@@ -369,7 +389,11 @@ If you want the live SVG yard view too, add a second service to the same compose
       - LOG_LEVEL=INFO
 ```
 
-The map's HTTP API is then served at `http://<host>:8000/page/<label>` — drop that URL into a Lovelace iframe card. Full configuration reference and troubleshooting in [`hookii_mower_map/DOCS.md`](hookii_mower_map/DOCS.md).
+The separate map's HTTP API is then served at `http://<host>:8000/page/<label>`.
+
+</details>
+
+Full Mower Map configuration reference (display options, troubleshooting) is in [`hookii_bridge/DOCS.md`](hookii_bridge/DOCS.md).
 
 ## Disclaimer
 

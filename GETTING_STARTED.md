@@ -138,6 +138,11 @@ nickname from the serial: it is the serial **lowercased** (e.g. serial
 `HKX1EB100JD25010115` → nickname `hkx1eb100jd25010115`). For the all-mowers
 grid use `url: /hassio/ingress/hookii_bridge/all`.
 
+> Want a **picture** card instead of an **iframe**? Use
+> `/hassio/ingress/hookii_bridge/embed/<nickname>` as the `image:` URL. Picture
+> cards can't run JavaScript so the map won't auto-refresh — stick with the
+> iframe above unless you specifically need a picture card.
+
 The map starts blank and fills in once the mower streams its first update. The
 yard **outline** can take a while to appear (the Hookii cloud only sends it
 occasionally) — the live position shows up right away.

@@ -158,18 +158,94 @@ so it just works.
 
 **Mower URL slugs.** Each mower's slug (its "label") is its **serial in
 lower-case** — e.g. serial `HKX1EB100JD25010115` → slug `hkx1eb100jd25010115`.
-You only need this if you embed the map on a dashboard:
+You only need this if you embed the map on a dashboard.
+
+**Embedding options** — pick the URL path that matches the Lovelace card you want:
+
+| Card type | URL path | Refreshes? |
+|---|---|---|
+| `iframe` (recommended) | `/hassio/ingress/hookii_bridge/page/<slug>` | Yes — built-in JS, every 10 s |
+| `picture` | `/hassio/ingress/hookii_bridge/embed/<slug>` | No — single static SVG snapshot |
+| `picture-entity` | `/hassio/ingress/hookii_bridge/embed/<slug>` | On bound entity state change (see [Direct Lovelace entity integration](#direct-lovelace-entity-integration-picture-entity-card) below) |
+| All-mowers grid (`iframe`) | `/hassio/ingress/hookii_bridge/all` | Yes |
 
 ```yaml
+# iframe (recommended): live, auto-refreshing
 type: iframe
-url: /hassio/ingress/hookii_bridge/page/hkx1eb100jd25010115   # one mower
+url: /hassio/ingress/hookii_bridge/page/hkx1eb100jd25010115
 aspect_ratio: 100%
 ```
 
-Use `/hassio/ingress/hookii_bridge/all` for the all-mowers grid (same as the
-sidebar panel). On the Container/k3s path (no Supervisor), the map is served
-directly at `http://<host>:8000/` when you set the `MOWERS` env var and publish
-port 8000 — see the repo README's Container path.
+```yaml
+# picture card: one static snapshot (no JS)
+type: picture
+image: /hassio/ingress/hookii_bridge/embed/hkx1eb100jd25010115
+```
+
+The `/embed` path exists because picture cards render images via `<img src="…">`,
+which can't run the JavaScript that drives `/page`. The SVG it returns carries
+absolute pixel dimensions (so it doesn't collapse to 0×0 inside the `<img>`)
+and `Cache-Control: no-cache` headers (so HA's picture-card re-fetch flow works
+on entity state changes). For single-mower installs you can also drop the slug
+and use bare `/hassio/ingress/hookii_bridge/embed` — it returns the only
+configured mower (400 with the list of labels if you have more than one).
+For everything else, stick with the iframe.
+
+On the Container/k3s path (no Supervisor), the map is served directly at
+`http://<host>:8000/` when you set the `MOWERS` env var and publish port 8000
+— see the repo README's Container path. The same `/page/<slug>`, `/embed/<slug>`
+and `/all` paths apply; just drop the `/hassio/ingress/hookii_bridge` prefix.
+
+### Direct Lovelace entity integration (`picture-entity` card)
+
+The `picture` and `iframe` cards above embed the map but don't expose it as an
+entity. If you'd rather treat the map as a regular Lovelace tile — one that
+sits alongside your other mower sensors, picks up dashboard themes, and can
+be combined in a `picture-glance` / `picture-elements` card with state badges
+overlaid on top — use a `picture-entity` card pointing at the same `/embed`
+URL, with the mower's `ha_state` sensor as the bound entity:
+
+```yaml
+type: picture-entity
+entity: sensor.hookii_hkx1eb100jd25010115_ha_state
+name: Mower Map
+image: /hassio/ingress/hookii_bridge/embed/hkx1eb100jd25010115
+show_name: false
+show_state: true
+```
+
+Home Assistant re-renders the card whenever the bound entity's state changes
+(`docked` → `mowing` → `returning`), and re-fetches the SVG on each re-render
+(the `/embed` endpoint's `Cache-Control: no-cache` makes the browser
+revalidate every time). For finer-grained refresh while the mower is moving,
+swap `entity:` to a fast-changing sensor — every state change on that sensor
+re-fetches the map:
+
+| Bound entity | Refreshes when... |
+|---|---|
+| `sensor.hookii_<slug>_ha_state` | mower transitions docked↔mowing↔returning (~minutes) |
+| `sensor.hookii_<slug>_work_status` | the cloud's work-status code changes (~30 s while active) |
+| `sensor.hookii_<slug>_latitude` | the mower physically moves (~2-5 s while mowing) |
+| `sensor.hookii_<slug>_longitude` | same as latitude |
+
+This is state-driven refresh, not a fixed cadence. Two practical implications:
+
+- The map **won't update while the mower is parked at the dock** — none of the
+  bound entities change while it's sleeping, so the SVG is frozen on the last
+  rendered frame. This is fine for a "where is the mower right now" glance
+  tile; for continuous monitoring use the iframe.
+- The image is a still SVG, not a true HA `camera` entity, so cards that
+  specifically require `camera.*` (the `camera` card, streaming dashboards,
+  the Companion app camera list) won't see it. There is currently no built-in
+  way to surface the live map as a camera entity without bridge code that
+  republishes the rendered SVG to MQTT — see the troubleshooting note below.
+
+> **Want the map auto-refreshed as a true HA camera entity** (so it appears in
+> the Camera dashboard, the Companion app, and any card that takes a
+> `camera.*`)? That needs the bridge to render the SVG and republish it to an
+> MQTT topic with a matching MQTT-discovery `camera` config — the iframe +
+> `picture-entity` options above are the recommended workarounds today. Open
+> an issue on the repo if you'd use this.
 
 **Display options** (both optional, in the add-on Configuration):
 

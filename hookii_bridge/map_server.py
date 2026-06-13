@@ -12,8 +12,19 @@ view of the yard with:
 - "Last fix" timestamp watermark
 
 Endpoints:
-  GET /             — JSON index of configured mowers + endpoints
-  GET /svg/<label>  — Latest SVG (image/svg+xml, no-cache)
+  GET /             — All-mowers grid HTML (shown by the HA sidebar panel)
+  GET /api          — JSON index of configured mowers + endpoints
+  GET /svg/<label>  — Latest SVG, width/height 100% (stretches to parent).
+                      Use inside a full-page browser or the /page wrapper's
+                      JS fetch. Collapses inside HA picture cards - see
+                      /embed below.
+  GET /embed[/<label>] — SVG tuned for HA dashboard embedding (picture /
+                      picture-entity / iframe cards). Carries absolute pixel
+                      width/height so it renders inside <img> tags, and uses
+                      Cache-Control: no-cache (drops no-store) so HA's image
+                      refresh flow can re-fetch on entity state changes. The
+                      label-less /embed returns the only configured mower, or
+                      400 if you have more than one.
   GET /page/<label> — HTML wrapper with 10-second meta-refresh, ready to drop
                       into a Home Assistant iframe card
   GET /state/<label>— JSON of the mower's current position + battery + capture
@@ -594,7 +605,7 @@ def extract_boundary(s: dict) -> dict:
     return out
 
 
-def render_svg(label: str) -> str:
+def render_svg(label: str, absolute_size: bool = False) -> str:
     s = state.get(label)
     if not s:
         return '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"/>'
@@ -650,8 +661,20 @@ def render_svg(label: str) -> str:
     def to_svg(x, y):
         return (x - min_x, max_y - y)  # flip Y for SVG coords
 
+    # absolute_size switches the SVG root between percentage and pixel
+    # dimensions. Default (False) emits width="100%" height="100%" so the SVG
+    # stretches to fill its parent - correct for the /page wrapper's JS swap
+    # and any full-page browser view. /embed uses absolute_size=True so the
+    # SVG carries its own pixel dimensions, which it must do when the parent
+    # has no intrinsic size (HA `picture` / `picture-entity` cards render the
+    # image via <img src>; a percentage-sized SVG with no resolvable parent
+    # collapses to 0x0 inside the <img>).
+    size_attr = (
+        f'width="{width}" height="{height}"' if absolute_size
+        else 'width="100%" height="100%"'
+    )
     svg = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" '
+        f'<svg xmlns="http://www.w3.org/2000/svg" {size_attr} '
         f'viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet">',
         f'<rect width="{width}" height="{height}" fill="#0f172a"/>',
     ]
@@ -852,7 +875,7 @@ def api_index():
             {"label": label, "serial": s["serial"], "color": s["color"]}
             for label, s in state.items()
         ],
-        "endpoints": ["/svg/{label}", "/page/{label}", "/state/{label}", "/all"],
+        "endpoints": ["/svg/{label}", "/embed/{label}", "/page/{label}", "/state/{label}", "/all"],
     }
 
 
@@ -865,6 +888,63 @@ def get_svg(label: str):
         media_type="image/svg+xml",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
+
+
+def _embed_response(label: str) -> Response:
+    """Build the HA-friendly embed response for a known-good label.
+
+    Same payload as /svg/{label} but with absolute pixel width/height and a
+    slightly more permissive Cache-Control - see get_embed for the why.
+    """
+    return Response(
+        content=render_svg(label, absolute_size=True),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
+
+
+@app.get("/embed")
+def get_embed_default():
+    """Single-mower convenience: /embed returns the only configured mower.
+
+    Most installs have one mower. Forcing the label into the URL is friction
+    when there's only one candidate, so /embed (no label) returns it directly.
+    For multi-mower setups, use /embed/<label> (raises 400 here so the user
+    sees the available labels instead of silently picking one).
+    """
+    if len(state) == 1:
+        return _embed_response(next(iter(state)))
+    raise HTTPException(status_code=400, detail=(
+        f"{len(state)} mowers configured - use /embed/<label>. "
+        f"available labels: {', '.join(state.keys())}"
+    ))
+
+
+@app.get("/embed/{label}")
+def get_embed(label: str):
+    """SVG tuned for HA dashboard embedding (picture / picture-entity / iframe).
+
+    Returns the same mower SVG as /svg/{label} but with two tweaks that make
+    it render reliably inside HA cards:
+
+    - Absolute width/height (viewBox pixel dims) instead of 100%/100%. The
+      default SVG stretches to fill its parent - correct for the /page JS
+      wrapper but collapses to 0x0 inside HA's `picture` / `picture-entity`
+      cards, which render images via <img src="..."> where the parent has no
+      intrinsic size. Embed contexts need the SVG to carry its own dimensions.
+    - Cache-Control: no-cache, must-revalidate (drops the no-store directive
+      that /svg/{label} uses). no-store blocks the conditional 304 re-fetch
+      flow HA's image refresh uses when an entity state changes, so a card
+      that should re-fetch on state change never does.
+
+    For auto-refresh in an HA dashboard, the most reliable approach is still
+    the iframe card with /page/<label> (HTML+JS). This endpoint is for cases
+    where you specifically need a bare SVG URL (custom cards, external
+    dashboards, picture-entity with state-driven refresh).
+    """
+    if label not in state:
+        raise HTTPException(status_code=404, detail=f"unknown mower {label!r}")
+    return _embed_response(label)
 
 
 @app.get("/state/{label}")
